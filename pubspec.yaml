@@ -1,0 +1,27 @@
+name: lyrix
+description: A music recommendation app
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  pocketbase: ^0.22.0
+  firebase_auth: ^5.5.4
+  local_auth: ^2.3.0
+  image_picker: ^1.1.0
+  just_audio: ^0.9.36
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
