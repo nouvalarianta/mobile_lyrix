@@ -4,9 +4,8 @@ import 'package:lyrix/services/pocketbase_service.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:http/http.dart'
-    show MultipartFile; // <--- Pastikan ini diimport!
-import 'package:http_parser/http_parser.dart'; // <--- Tambahkan ini untuk MediaType
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -22,8 +21,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _emailController = TextEditingController();
   final _bioController = TextEditingController();
 
-  bool _isUploading = false;
-  File? _pickedImage;
+  bool _isSaving = false;
+  XFile? _pickedXFile;
   String? _currentImageUrl;
 
   @override
@@ -36,7 +35,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (pb.authStore.isValid && pb.authStore.model is RecordModel) {
       final user = pb.authStore.model as RecordModel;
 
-      // --- DEBUGGING: Cetak objek user untuk melihat strukturnya ---
       print('EditProfile: User RecordModel raw: ${user.toJson()}');
       print('EditProfile: User ID: ${user.id}');
       print('EditProfile: User Username: ${user.data['username']}');
@@ -44,7 +42,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       print('EditProfile: User name from data: ${user.data['name']}');
       print('EditProfile: User bio from data: ${user.data['bio']}');
       print('EditProfile: User image from data: ${user.data['image']}');
-      // --- END DEBUGGING ---
 
       setState(() {
         _nameController.text = user.data['name'] ?? user.data['username'] ?? '';
@@ -107,6 +104,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 _getImage(ImageSource.gallery);
               },
             ),
+            if (_currentImageUrl != null || _pickedXFile != null)
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text('Hapus Foto Profil'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _pickedXFile = null;
+                    _currentImageUrl = null;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Foto profil akan dihapus saat disimpan'),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -119,7 +133,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     if (pickedFile != null) {
       setState(() {
-        _pickedImage = File(pickedFile.path);
+        _pickedXFile = pickedFile;
         _currentImageUrl = null;
       });
     }
@@ -129,6 +143,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+
+    setState(() {
+      _isSaving = true;
+    });
 
     showDialog(
       context: context,
@@ -158,36 +176,41 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'bio': _bioController.text,
       };
 
-      // Siapkan list MultipartFile
-      List<MultipartFile> filesToUpload = [];
-      if (_pickedImage != null) {
-        filesToUpload.add(
-          await MultipartFile.fromPath(
-            'image', // Pastikan ini sesuai dengan nama field di PocketBase
-            _pickedImage!.path,
-            filename: _pickedImage!.path.split('/').last,
-            contentType: MediaType('image',
-                'jpeg'), // import 'package:http_parser/http_parser.dart';
+      List<http.MultipartFile> multipartFiles = [];
+
+      if (_pickedXFile != null) {
+        final fileBytes = await _pickedXFile!.readAsBytes();
+        final fileName = _pickedXFile!.name;
+        final fileExtension = fileName.split('.').last;
+        final contentType = MediaType('image', fileExtension);
+
+        multipartFiles.add(
+          http.MultipartFile.fromBytes(
+            'image',
+            fileBytes,
+            filename: fileName,
+            contentType: contentType,
           ),
         );
-      } else {
-        // Jika tidak ada gambar baru yang dipilih dan pengguna ingin menghapus gambar lama,
-        // Anda perlu secara eksplisit mengirim list kosong untuk field 'image'.
-        // Contoh:
-        // if (_currentImageUrl != null && _pickedImage == null && userPressedDeleteImage) {
-        //   filesToUpload.add(MultipartFile.fromString('image', '')); // Mengirim string kosong untuk menghapus file
-        // }
-        // Atau:
-        // filesToUpload.add(MultipartFile.fromBytes('image', [])); // Mengirim byte kosong
+      } else if (_currentImageUrl == null &&
+          currentUser.data['image']?.isNotEmpty == true) {
+        multipartFiles.add(
+          http.MultipartFile.fromString(
+            'image',
+            '',
+          ),
+        );
       }
 
       await pb.collection('users').update(
             currentUser.id,
             body: body,
-            files: filesToUpload, // <--- Pass as List<MultipartFile>
+            files: multipartFiles,
           );
 
-      // await pb.authStore.refresh(); // Removed because AuthStore has no 'refresh' method
+      final updatedUserRecord =
+          await pb.collection('users').getOne(currentUser.id);
+      pb.authStore.save(pb.authStore.token, updatedUserRecord);
 
       if (mounted) Navigator.pop(context);
 
@@ -195,7 +218,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profil berhasil diperbarui'),
-            backgroundColor: AppTheme.primaryColor,
           ),
         );
       }
@@ -211,7 +233,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         errorMessage = e.response['message'].toString();
         if (e.response['data'] != null) {
           e.response['data'].forEach((key, value) {
-            errorMessage += '\n${key}: ${value['message']}';
+            errorMessage +=
+                '\n${key}: ${value['message'] ?? 'Unknown field error'}';
           });
         }
       }
@@ -220,7 +243,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
-            backgroundColor: Colors.red,
           ),
         );
       }
@@ -233,15 +255,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Terjadi kesalahan tak terduga: $e'),
-            backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ImageProvider? profileImageProvider;
+    if (_pickedXFile != null) {
+      profileImageProvider = FileImage(File(_pickedXFile!.path));
+    } else if (_currentImageUrl != null) {
+      profileImageProvider = NetworkImage(_currentImageUrl!);
+    } else {
+      profileImageProvider =
+          const AssetImage('assets/images/default_avatar.png');
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Profil'),
@@ -251,14 +288,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: _saveChanges,
-            child: const Text(
-              'Simpan',
-              style: TextStyle(
-                color: AppTheme.primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            onPressed: _isSaving ? null : _saveChanges,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.primaryColor,
+                    ),
+                  )
+                : const Text(
+                    'Simpan',
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -274,12 +320,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 Stack(
                   alignment: Alignment.bottomRight,
                   children: [
-                    _isUploading
+                    _isSaving
                         ? Container(
                             width: 120,
                             height: 120,
-                            decoration: const BoxDecoration(
-                              color: AppTheme.surfaceColor,
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceColor.withOpacity(0.8),
                               shape: BoxShape.circle,
                             ),
                             child: const Center(
@@ -291,39 +337,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         : CircleAvatar(
                             radius: 60,
                             backgroundColor: AppTheme.primaryColor,
-                            backgroundImage: _pickedImage != null
-                                ? FileImage(_pickedImage!)
-                                : (_currentImageUrl != null
-                                    ? NetworkImage(_currentImageUrl!)
-                                    : null) as ImageProvider<Object>?,
-                            child: (_pickedImage == null &&
-                                    _currentImageUrl == null)
-                                ? const Icon(
-                                    Icons.person,
-                                    size: 60,
-                                    color: Colors.white,
-                                  )
-                                : null,
+                            backgroundImage: profileImageProvider,
                           ),
-                    GestureDetector(
-                      onTap: _showImageSourceDialog,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppTheme.backgroundColor,
-                            width: 2,
+                    if (!_isSaving)
+                      GestureDetector(
+                        onTap: _showImageSourceDialog,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppTheme.backgroundColor,
+                              width: 2,
+                            ),
                           ),
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt,
-                          color: Colors.white,
-                          size: 20,
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 32),
@@ -391,7 +426,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _saveChanges,
+                    onPressed: _isSaving ? null : _saveChanges,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryColor,
                       foregroundColor: Colors.white,
@@ -400,13 +435,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
-                    child: const Text(
-                      'Simpan Perubahan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: _isSaving
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            'Simpan Perubahan',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 40),
@@ -480,9 +517,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       selected: isSelected,
       label: Text(label),
       onSelected: (selected) {
-        setState(() {
-          // Logic for changing genre selection status
-        });
+        setState(() {});
       },
       backgroundColor: AppTheme.surfaceColor,
       selectedColor: AppTheme.primaryColor.withOpacity(0.3),

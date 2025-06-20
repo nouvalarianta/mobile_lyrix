@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/screens/artist_detail_screen.dart';
 import 'package:lyrix/screens/search_screen.dart';
-import 'package:lyrix/screens/song_detail_screen.dart';
 import 'package:lyrix/screens/profile_screen.dart';
 import 'package:lyrix/widgets/artist_card.dart';
 import 'package:lyrix/widgets/song_card.dart';
@@ -9,14 +8,12 @@ import 'package:lyrix/widgets/section_header.dart';
 import 'package:lyrix/screens/trending_songs_screen.dart';
 import 'package:lyrix/screens/popular_artists_screen.dart';
 import 'package:lyrix/screens/recently_played_screen.dart';
-
+import 'package:lyrix/screens/now_playing_screen.dart';
 import 'package:lyrix/services/pocketbase_service.dart';
 import 'package:pocketbase/pocketbase.dart';
-
-// Hapus import yang tidak diperlukan lagi:
-// import 'package:lyrix/models/song.dart';
-// import 'package:lyrix/models/artist.dart';
-// import 'package:lyrix/data/mock_data.dart';
+import 'package:lyrix/services/audio_player_service.dart';
+import 'package:provider/provider.dart';
+import 'package:lyrix/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -39,8 +36,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final audioPlayerService = Provider.of<AudioPlayerService>(context);
+
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: Stack(
+        children: [
+          _screens[_currentIndex],
+          if (audioPlayerService.currentSong != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 80,
+              child: _buildMiniPlayer(context, audioPlayerService),
+            ),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -62,6 +72,104 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Profile',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMiniPlayer(
+      BuildContext context, AudioPlayerService audioPlayerService) {
+    final currentSong = audioPlayerService.currentSong!;
+    final imageUrl = currentSong.getStringValue('image').isNotEmpty
+        ? pb
+            .getFileUrl(currentSong, currentSong.getStringValue('image'))
+            .toString()
+        : '';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(context,
+            MaterialPageRoute(builder: (context) => const NowPlayingScreen()));
+      },
+      child: Container(
+        height: 60,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceColor,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      width: 45,
+                      height: 45,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 45,
+                        height: 45,
+                        color: Colors.grey[800],
+                        child: Icon(Icons.music_note,
+                            color: Colors.white, size: 20),
+                      ),
+                    )
+                  : Container(
+                      width: 45,
+                      height: 45,
+                      color: Colors.grey[800],
+                      child:
+                          Icon(Icons.music_note, color: Colors.white, size: 20),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    currentSong.getStringValue('title'),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    currentSong.getStringValue('artist'),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.white70),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: Icon(
+                audioPlayerService.isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
+                size: 36,
+                color: AppTheme.primaryColor,
+              ),
+              onPressed: audioPlayerService.togglePlayPause,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -88,7 +196,7 @@ class _HomeContentState extends State<HomeContent> {
   Future<void> _fetchHomeData() async {
     try {
       final songs = await pb.collection('songs').getFullList(
-            sort: '-plays', // Urutkan berdasarkan plays
+            sort: '-plays',
             batch: 10,
           );
 
@@ -204,13 +312,14 @@ class _HomeContentState extends State<HomeContent> {
                   itemBuilder: (context, index) {
                     final songRecord = _trendingSongs[index];
                     return SongCard(
-                      songRecord: songRecord, // <--- Corrected
+                      songRecord: songRecord,
                       onTap: () {
+                        Provider.of<AudioPlayerService>(context, listen: false)
+                            .playSong(songRecord);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) =>
-                                SongDetailScreen(songRecord: songRecord),
+                            builder: (context) => NowPlayingScreen(),
                           ),
                         );
                       },
@@ -259,7 +368,7 @@ class _HomeContentState extends State<HomeContent> {
                   itemBuilder: (context, index) {
                     final artistRecord = _popularArtists[index];
                     return ArtistCard(
-                      artistRecord: artistRecord, // <--- Corrected
+                      artistRecord: artistRecord,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -353,11 +462,13 @@ class _HomeContentState extends State<HomeContent> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 onTap: () {
+                                  Provider.of<AudioPlayerService>(context,
+                                          listen: false)
+                                      .playSong(songRecord);
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => SongDetailScreen(
-                                          songRecord: songRecord),
+                                      builder: (context) => NowPlayingScreen(),
                                     ),
                                   );
                                 },

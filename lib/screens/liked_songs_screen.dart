@@ -14,10 +14,8 @@ class LikedSongsScreen extends StatefulWidget {
 
 class _LikedSongsScreenState extends State<LikedSongsScreen> {
   bool _isLoading = true;
-  List<RecordModel> _likedSongRecords =
-      []; // Ini adalah record dari koleksi 'liked_songs'
-  List<RecordModel> _filteredSongRecords =
-      []; // Ini adalah record dari koleksi 'liked_songs'
+  List<RecordModel> _likedSongRecords = [];
+  List<RecordModel> _filteredSongRecords = [];
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
 
@@ -36,7 +34,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     super.initState();
     _loadLikedSongs();
     _searchController.addListener(_onSearchChanged);
-    // Listener untuk perubahan auth store, agar daftar liked songs refresh jika user login/logout
     pb.authStore.onChange.listen((_) {
       if (mounted) {
         _loadLikedSongs();
@@ -53,7 +50,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
 
   void _loadLikedSongs() async {
     if (!pb.authStore.isValid) {
-      // Jika tidak login, tidak ada liked songs
       setState(() {
         _likedSongRecords = [];
         _filteredSongRecords = [];
@@ -66,12 +62,10 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       _isLoading = true;
     });
     try {
-      // Ambil record dari koleksi 'liked_songs' dan EXPAND field 'song'
       final records = await pb.collection('liked_songs').getFullList(
-            filter:
-                'user = "${pb.authStore.model?.id}"', // Hanya lagu yang disukai oleh user ini
-            expand: 'song', // Penting: Expand relasi ke koleksi 'songs'
-            sort: '-created', // Urutkan berdasarkan kapan disukai
+            filter: 'user = "${pb.authStore.model?.id}"',
+            expand: 'song',
+            sort: '-created',
           );
 
       if (mounted) {
@@ -79,7 +73,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
           _likedSongRecords = records;
           _filteredSongRecords = List.from(_likedSongRecords);
           _isLoading = false;
-          _sortSongs(); // Terapkan pengurutan awal
+          _sortSongs();
         });
       }
     } on ClientException catch (e) {
@@ -114,9 +108,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         _filteredSongRecords = List.from(_likedSongRecords);
       } else {
         _filteredSongRecords = _likedSongRecords.where((likedRecord) {
-          final song = likedRecord
-              .expand['song']?.first; // Ambil record lagu dari expand
-          if (song == null) return false; // Abaikan jika lagu tidak ditemukan
+          final song = likedRecord.expand['song']?.first;
+          if (song == null) return false;
           return song.getStringValue('title').toLowerCase().contains(query) ||
               song.getStringValue('artist').toLowerCase().contains(query) ||
               song.getStringValue('album').toLowerCase().contains(query);
@@ -218,8 +211,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
               .compareTo(a.expand['song']!.first.getStringValue('artist')));
           break;
         case 'Terbaru Ditambahkan':
-          _filteredSongRecords.sort((a, b) => b.created.compareTo(a
-              .created)); // Urutkan berdasarkan created_at dari record 'liked_songs'
+          _filteredSongRecords.sort((a, b) => b.created.compareTo(a.created));
           break;
         case 'Terlama Ditambahkan':
           _filteredSongRecords.sort((a, b) => a.created.compareTo(b.created));
@@ -235,9 +227,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         backgroundColor: AppTheme.primaryColor,
       ),
     );
-    // TODO: Implementasi pemutaran lagu
-    // Misalnya, ambil URL audio dari setiap lagu di _filteredSongRecords
-    // dan putar menggunakan just_audio.
   }
 
   void _shufflePlay() {
@@ -250,7 +239,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         backgroundColor: AppTheme.primaryColor,
       ),
     );
-    // TODO: Implementasi pemutaran acak
   }
 
   @override
@@ -265,7 +253,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 16.0, bottom: 16.0),
               title: const Text(
-                'Lagu yang Disukai',
+                'Liked Songs',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -407,16 +395,12 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final likedSongRecord = _filteredSongRecords[index];
-                  // RecordModel dari 'liked_songs' punya field 'song' (relasi)
-                  // yang di-expand menjadi RecordModel dari koleksi 'songs'
                   final song = likedSongRecord.expand['song']?.first;
 
                   if (song == null) {
-                    // Jika lagu tidak ditemukan (misal, relasi putus), tampilkan placeholder
                     return const ListTile(title: Text('Lagu tidak ditemukan'));
                   }
-                  return _buildSongItem(
-                      likedSongRecord, song); // Teruskan kedua record
+                  return _buildSongItem(likedSongRecord, song);
                 },
                 childCount: _filteredSongRecords.length,
               ),
@@ -426,7 +410,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     );
   }
 
-  // _buildSongItem sekarang menerima likedSongRecord DAN songRecord
   Widget _buildSongItem(RecordModel likedSongRecord, RecordModel songRecord) {
     final String title = songRecord.getStringValue('title');
     final String artist = songRecord.getStringValue('artist');
@@ -537,7 +520,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
             ],
             onSelected: (value) {
               if (value == 'unlike') {
-                _unlikeSong(likedSongRecord); // Teruskan record liked_songs
+                _unlikeSong(likedSongRecord);
               }
             },
           ),
@@ -547,8 +530,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => SongDetailScreen(
-                songRecord: songRecord), // Teruskan record lagu asli
+            builder: (context) => SongDetailScreen(songRecord: songRecord),
           ),
         );
       },
@@ -577,12 +559,10 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          if (!_isSearching &&
-              pb.authStore
-                  .isValid) // Tampilkan tombol hanya jika login dan bukan mode cari
+          if (!_isSearching && pb.authStore.isValid)
             ElevatedButton.icon(
               onPressed: () {
-                Navigator.pop(context); // Kembali ke Home/Search
+                Navigator.pop(context);
               },
               icon: const Icon(Icons.explore),
               label: const Text('Jelajahi Musik'),
@@ -604,12 +584,10 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
   }
 
   void _unlikeSong(RecordModel likedSongRecord) async {
-    // Menerima record dari 'liked_songs'
     try {
       if (!pb.authStore.isValid) {
         throw Exception('User not authenticated.');
       }
-      // Hapus record dari koleksi 'liked_songs' berdasarkan ID-nya
       await pb.collection('liked_songs').delete(likedSongRecord.id);
 
       if (mounted) {
@@ -622,16 +600,13 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
               label: 'BATAL',
               textColor: AppTheme.primaryColor,
               onPressed: () {
-                // TODO: Implementasi undo (membuat ulang record di 'liked_songs')
-                // Ini akan memerlukan penambahan ulang record ke PocketBase
-                // Untuk sementara, panggil _loadLikedSongs() untuk merefresh data
-                _loadLikedSongs(); // Muat ulang dari server untuk kesederhanaan
+                _loadLikedSongs();
               },
             ),
           ),
         );
       }
-      _loadLikedSongs(); // Muat ulang daftar setelah penghapusan
+      _loadLikedSongs();
     } on ClientException catch (e) {
       print('PocketBase Client Error unliking song: ${e.response}');
       if (mounted) {

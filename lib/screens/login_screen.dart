@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // <--- Import ini
+import 'package:lyrix/services/pocketbase_service.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/social_button.dart';
 import 'register_screen.dart';
@@ -20,8 +20,23 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isPasswordVisible = false;
   bool _isLoading = false;
 
-  // Hapus inisialisasi pb di sini
-  // final pb = PocketBase('http://127.0.0.1:8090');
+  @override
+  void initState() {
+    super.initState();
+    _checkAutoLogin();
+  }
+
+  void _checkAutoLogin() {
+    if (pb.authStore.isValid) {
+      print('User already logged in. Navigating to Home Screen.');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -38,7 +53,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       try {
         await pb.collection('users').authWithPassword(
-              // <--- Menggunakan pb global
               _emailController.text,
               _passwordController.text,
             );
@@ -50,7 +64,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Login successful!'),
-            backgroundColor: Color(0xFF45CC27),
           ),
         );
 
@@ -70,7 +83,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
         String errorMessage = 'Login failed. Please try again.';
         if (e.response['message'] != null) {
-          if (e.response['message'].contains('Failed to authenticate')) {
+          if (e.response['message']
+              .toString()
+              .contains('Failed to authenticate')) {
             errorMessage = 'Invalid email or password';
           } else {
             errorMessage = e.response['message'].toString();
@@ -80,7 +95,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
-            backgroundColor: Colors.red,
           ),
         );
       } catch (e) {
@@ -91,7 +105,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('An unexpected error occurred: $e'),
-            backgroundColor: Colors.red,
           ),
         );
       }
@@ -100,7 +113,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (sisa kode LoginScreen Anda sama dengan yang Anda berikan sebelumnya)
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -189,9 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {
-                      // Handle forgot password
-                    },
+                    onPressed: () {},
                     child: const Text(
                       'Forgot Password?',
                       style: TextStyle(color: Color(0xFF45CC27)),
@@ -229,9 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SocialButton(
                   text: 'Continue with Google',
                   icon: Icons.g_mobiledata,
-                  onPressed: () {
-                    // Handle Google login
-                  },
+                  onPressed: () {},
                 ),
                 const Spacer(),
                 Row(

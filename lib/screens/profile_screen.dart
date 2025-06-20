@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
 import 'package:lyrix/screens/edit_profile_screen.dart';
-import 'package:lyrix/screens/library_screen.dart';
 import 'package:lyrix/screens/liked_songs_screen.dart';
 import 'package:lyrix/screens/recently_played_screen.dart';
 import 'package:lyrix/screens/playlists_screen.dart';
 import 'package:lyrix/screens/following_screen.dart';
 import 'package:lyrix/screens/settings_screen.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // Import ini
-import 'package:lyrix/screens/login_screen.dart'; // Untuk navigasi setelah logout
-import 'package:pocketbase/pocketbase.dart'; // Pastikan ini diimpor untuk RecordModel
+import 'package:lyrix/screens/help_and_support_screen.dart';
+import 'package:lyrix/screens/about_screen.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:lyrix/screens/login_screen.dart';
+import 'package:pocketbase/pocketbase.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -21,15 +22,14 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _userName = 'Guest User';
   String _userEmail = 'guest@example.com';
-  String? _imageUrl; // Mengubah dari _avatarUrl menjadi _imageUrl
+  String? _imageUrl;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
-    // Tambahkan listener untuk perubahan autentikasi secara real-time
     pb.authStore.onChange.listen((_) {
-      _loadUserProfile(); // Muat ulang data profil saat ada perubahan autentikasi
+      _loadUserProfile();
     });
   }
 
@@ -37,29 +37,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (pb.authStore.isValid && pb.authStore.model is RecordModel) {
       final user = pb.authStore.model as RecordModel;
 
-      // --- DEBUGGING: Cetak objek user untuk melihat strukturnya ---
       print('Profile: User RecordModel raw: ${user.toJson()}');
       print('Profile: User ID: ${user.id}');
-      print(
-          'Profile: User Username: ${user.data['username']}'); // Ambil username dari data
-      print(
-          'Profile: User Email: ${user.data['email']}'); // Ambil email dari data
+      print('Profile: User Username: ${user.data['username']}');
+      print('Profile: User Email: ${user.data['email']}');
       print('Profile: User name from data: ${user.data['name']}');
-      print(
-          'Profile: User image from data: ${user.data['image']}'); // Menggunakan 'image'
-      // --- END DEBUGGING ---
+      print('Profile: User image from data: ${user.data['image']}');
 
       setState(() {
-        // Ambil nama dari field 'name' jika ada, jika tidak, gunakan username.
         _userName = user.data['name'] ?? user.data['username'] ?? 'No Name';
-
-        // Ambil email dari field 'email' di data.
         _userEmail = user.data['email'] ?? 'guest@example.com';
 
-        // Muat URL gambar yang sudah ada jika tersedia dari field 'image'
         if (user.data['image'] != null && user.data['image'].isNotEmpty) {
           try {
-            // Gunakan pb.getFileUrl dengan nama field 'image'
             _imageUrl = pb.getFileUrl(user, user.data['image']).toString();
           } catch (e) {
             print('Error getting image URL in ProfileScreen: $e');
@@ -70,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
       });
     } else {
-      // Jika tidak ada user yang login, reset ke nilai default
       setState(() {
         _userName = 'Guest User';
         _userEmail = 'guest@example.com';
@@ -82,17 +71,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _logout() async {
     try {
-      pb.authStore.clear(); // Hapus token autentikasi dari PocketBase
+      pb.authStore.clear();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Anda telah keluar dari akun'),
-          backgroundColor: AppTheme.surfaceColor,
         ),
       );
 
       if (mounted) {
-        // Navigasi kembali ke LoginScreen dan hapus semua rute sebelumnya
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -103,7 +90,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gagal logout: $e'),
-          backgroundColor: Colors.red,
         ),
       );
     }
@@ -143,17 +129,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CircleAvatar(
                 radius: 50,
                 backgroundColor: AppTheme.primaryColor,
-                // Gunakan _imageUrl jika tidak null, jika tidak, gunakan ikon default
                 backgroundImage: _imageUrl != null
                     ? NetworkImage(_imageUrl!)
-                    : null, // Jika _imageUrl null, backgroundImage juga null
+                    : const AssetImage('assets/images/default_avatar.png')
+                        as ImageProvider<Object>,
                 child: _imageUrl == null
                     ? const Icon(
                         Icons.person,
                         size: 50,
                         color: Colors.white,
                       )
-                    : null, // Jika ada gambar, jangan tampilkan ikon
+                    : null,
               ),
               const SizedBox(height: 16),
               Text(
@@ -178,7 +164,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       builder: (context) => const EditProfileScreen(),
                     ),
                   ).then((value) {
-                    // Muat ulang data profil setelah kembali dari EditProfileScreen
                     _loadUserProfile();
                   });
                 },
@@ -197,19 +182,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 32),
               const Divider(),
-              _buildListTile(
-                context,
-                'Your Library',
-                Icons.library_music_outlined,
-                () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const LibraryScreen(),
-                    ),
-                  );
-                },
-              ),
               _buildListTile(
                 context,
                 'Liked Songs',
@@ -280,13 +252,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 context,
                 'Help & Support',
                 Icons.help_outline,
-                () {},
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const HelpAndSupportScreen(),
+                    ),
+                  );
+                },
               ),
               _buildListTile(
                 context,
                 'About',
                 Icons.info_outline,
-                () {},
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AboutScreen(),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 24),
               TextButton(
@@ -317,9 +303,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Widget? trailing,
   }) {
     return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: trailing ?? const Icon(Icons.chevron_right),
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      trailing:
+          trailing ?? const Icon(Icons.chevron_right, color: Colors.white70),
       onTap: onTap,
     );
   }
@@ -329,20 +316,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Keluar'),
-        content: const Text('Apakah Anda yakin ingin keluar dari akun Anda?'),
+        title: const Text('Log Out', style: TextStyle(color: Colors.white)),
+        content: const Text('Apakah Anda yakin ingin keluar dari akun Anda?',
+            style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+            child: const Text('Batal',
+                style: TextStyle(color: AppTheme.primaryColor)),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context); // Tutup dialog
-              _logout(); // Panggil fungsi logout
+              Navigator.pop(context);
+              _logout();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
             ),
             child: const Text('Keluar'),
           ),

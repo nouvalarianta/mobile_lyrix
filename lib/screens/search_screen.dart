@@ -2,13 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lyrix/screens/artist_detail_screen.dart';
 import 'package:lyrix/screens/song_detail_screen.dart';
 import 'package:lyrix/theme/app_theme.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // Import PocketBase instance
-import 'package:pocketbase/pocketbase.dart'; // Import RecordModel
-
-// Hapus imports:
-// import 'package:lyrix/models/song.dart';
-// import 'package:lyrix/models/artist.dart';
-// import 'package:lyrix/data/mock_data.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:pocketbase/pocketbase.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -23,8 +18,8 @@ class _SearchScreenState extends State<SearchScreen>
   late TabController _tabController;
   bool _isSearching = false;
   String _searchQuery = '';
-  List<RecordModel> _filteredSongs = []; // Ubah menjadi RecordModel
-  List<RecordModel> _filteredArtists = []; // Ubah menjadi RecordModel
+  List<RecordModel> _filteredSongs = [];
+  List<RecordModel> _filteredArtists = [];
   bool _isLoading = false;
 
   @override
@@ -44,14 +39,13 @@ class _SearchScreenState extends State<SearchScreen>
 
   void _onSearchChanged() {
     setState(() {
-      _searchQuery = _searchController.text.trim(); // Gunakan trim()
+      _searchQuery = _searchController.text.trim();
       _isSearching = _searchQuery.isNotEmpty;
     });
 
     if (_isSearching) {
       _searchMusic(_searchQuery);
     } else {
-      // Clear results when search query is empty
       setState(() {
         _filteredSongs = [];
         _filteredArtists = [];
@@ -65,19 +59,17 @@ class _SearchScreenState extends State<SearchScreen>
     });
 
     try {
-      // Cari lagu
       final songsResult = await pb.collection('songs').getList(
             page: 1,
-            perPage: 20, // Batasi jumlah hasil
+            perPage: 20,
             filter:
-                'title ~ "%$query%" || artist ~ "%$query%" || album ~ "%$query%"', // Case-insensitive search using LIKE operator
+                'title ~ "%$query%" || artist ~ "%$query%" || album ~ "%$query%"',
           );
 
-      // Cari artis
       final artistsResult = await pb.collection('artist').getList(
             page: 1,
-            perPage: 20, // Batasi jumlah hasil
-            filter: 'name ~ "%$query%"', // Case-insensitive search using LIKE operator
+            perPage: 20,
+            filter: 'name ~ "%$query%"',
           );
 
       if (mounted) {
@@ -91,7 +83,9 @@ class _SearchScreenState extends State<SearchScreen>
       print('PocketBase Client Error during search: ${e.response}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Search failed: ${e.response['message'] ?? 'Unknown error'}')),
+          SnackBar(
+              content: Text(
+                  'Search failed: ${e.response['message'] ?? 'Unknown error'}')),
         );
         setState(() {
           _isLoading = false;
@@ -101,7 +95,8 @@ class _SearchScreenState extends State<SearchScreen>
       print('Unexpected Error during search: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An unexpected error occurred during search: $e')),
+          SnackBar(
+              content: Text('An unexpected error occurred during search: $e')),
         );
         setState(() {
           _isLoading = false;
@@ -128,7 +123,6 @@ class _SearchScreenState extends State<SearchScreen>
                           icon: const Icon(Icons.clear),
                           onPressed: () {
                             _searchController.clear();
-                            // _onSearchChanged akan dipanggil otomatis oleh listener
                           },
                         )
                       : null,
@@ -141,7 +135,7 @@ class _SearchScreenState extends State<SearchScreen>
                 ),
               ),
             ),
-            if (_searchQuery.isNotEmpty) ...[ // Tampilkan tabs dan hasil hanya jika ada query
+            if (_searchQuery.isNotEmpty) ...[
               TabBar(
                 controller: _tabController,
                 tabs: const [
@@ -158,15 +152,21 @@ class _SearchScreenState extends State<SearchScreen>
                     : TabBarView(
                         controller: _tabController,
                         children: [
-                          // Songs tab
                           _filteredSongs.isEmpty
                               ? const Center(child: Text('No songs found'))
                               : ListView.builder(
                                   itemCount: _filteredSongs.length,
                                   itemBuilder: (context, index) {
-                                    final songRecord = _filteredSongs[index]; // Ambil RecordModel
-                                    final imageUrl = songRecord.getStringValue('image').isNotEmpty
-                                        ? pb.getFileUrl(songRecord, songRecord.getStringValue('image')).toString()
+                                    final songRecord = _filteredSongs[index];
+                                    final imageUrl = songRecord
+                                            .getStringValue('image')
+                                            .isNotEmpty
+                                        ? pb
+                                            .getFileUrl(
+                                                songRecord,
+                                                songRecord
+                                                    .getStringValue('image'))
+                                            .toString()
                                         : '';
                                     return ListTile(
                                       leading: ClipRRect(
@@ -177,12 +177,15 @@ class _SearchScreenState extends State<SearchScreen>
                                                 width: 50,
                                                 height: 50,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) {
+                                                errorBuilder: (context, error,
+                                                    stackTrace) {
                                                   return Container(
                                                     width: 50,
                                                     height: 50,
                                                     color: Colors.grey[800],
-                                                    child: const Icon(Icons.music_note, color: Colors.white),
+                                                    child: const Icon(
+                                                        Icons.music_note,
+                                                        color: Colors.white),
                                                   );
                                                 },
                                               )
@@ -190,32 +193,44 @@ class _SearchScreenState extends State<SearchScreen>
                                                 width: 50,
                                                 height: 50,
                                                 color: Colors.grey[800],
-                                                child: const Icon(Icons.music_note, color: Colors.white),
+                                                child: const Icon(
+                                                    Icons.music_note,
+                                                    color: Colors.white),
                                               ),
                                       ),
-                                      title: Text(songRecord.getStringValue('title')),
-                                      subtitle: Text(songRecord.getStringValue('artist')),
+                                      title: Text(
+                                          songRecord.getStringValue('title')),
+                                      subtitle: Text(
+                                          songRecord.getStringValue('artist')),
                                       onTap: () {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => SongDetailScreen(songRecord: songRecord),
+                                            builder: (context) =>
+                                                SongDetailScreen(
+                                                    songRecord: songRecord),
                                           ),
                                         );
                                       },
                                     );
                                   },
                                 ),
-
-                          // Artists tab
                           _filteredArtists.isEmpty
                               ? const Center(child: Text('No artists found'))
                               : ListView.builder(
                                   itemCount: _filteredArtists.length,
                                   itemBuilder: (context, index) {
-                                    final artistRecord = _filteredArtists[index]; // Ambil RecordModel
-                                    final imageUrl = artistRecord.getStringValue('imageUrl').isNotEmpty
-                                        ? pb.getFileUrl(artistRecord, artistRecord.getStringValue('imageUrl')).toString()
+                                    final artistRecord =
+                                        _filteredArtists[index];
+                                    final imageUrl = artistRecord
+                                            .getStringValue('imageUrl')
+                                            .isNotEmpty
+                                        ? pb
+                                            .getFileUrl(
+                                                artistRecord,
+                                                artistRecord
+                                                    .getStringValue('imageUrl'))
+                                            .toString()
                                         : '';
                                     return ListTile(
                                       leading: CircleAvatar(
@@ -223,20 +238,27 @@ class _SearchScreenState extends State<SearchScreen>
                                         backgroundImage: imageUrl.isNotEmpty
                                             ? NetworkImage(imageUrl)
                                             : null,
-                                        onBackgroundImageError: (exception, stackTrace) {
-                                          print('Error loading artist image: $exception');
+                                        onBackgroundImageError:
+                                            (exception, stackTrace) {
+                                          print(
+                                              'Error loading artist image: $exception');
                                         },
                                         child: imageUrl.isEmpty
-                                            ? const Icon(Icons.person, size: 25, color: Colors.white54)
+                                            ? const Icon(Icons.person,
+                                                size: 25, color: Colors.white54)
                                             : null,
                                       ),
-                                      title: Text(artistRecord.getStringValue('name')),
-                                      subtitle: Text('${artistRecord.getIntValue('followers')} followers'),
+                                      title: Text(
+                                          artistRecord.getStringValue('name')),
+                                      subtitle: Text(
+                                          '${artistRecord.getIntValue('followers')} followers'),
                                       onTap: () {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => ArtistDetailScreen(artistRecord: artistRecord),
+                                            builder: (context) =>
+                                                ArtistDetailScreen(
+                                                    artistRecord: artistRecord),
                                           ),
                                         );
                                       },
@@ -246,7 +268,7 @@ class _SearchScreenState extends State<SearchScreen>
                         ],
                       ),
               ),
-            ] else ...[ // Tampilkan pesan default jika query kosong
+            ] else ...[
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

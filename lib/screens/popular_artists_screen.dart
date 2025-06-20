@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
 import 'package:lyrix/screens/artist_detail_screen.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // Import PocketBase instance
-import 'package:pocketbase/pocketbase.dart'; // Import RecordModel
-
-// Hapus imports:
-// import 'package:lyrix/models/artist.dart';
-// import 'package:lyrix/data/mock_data.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:pocketbase/pocketbase.dart';
 
 class PopularArtistsScreen extends StatefulWidget {
   const PopularArtistsScreen({super.key});
@@ -17,12 +13,11 @@ class PopularArtistsScreen extends StatefulWidget {
 
 class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
   bool _isLoading = true;
-  List<RecordModel> _popularArtists = []; // Ubah menjadi RecordModel
+  List<RecordModel> _popularArtists = [];
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  List<RecordModel> _filteredArtists = []; // Ubah menjadi RecordModel
+  List<RecordModel> _filteredArtists = [];
 
-  // Opsi pengurutan
   String _currentSortOption = 'Popularitas';
   final List<String> _sortOptions = [
     'Popularitas',
@@ -32,11 +27,19 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
     'Pengikut (Tersedikit)',
   ];
 
+  final Map<String, Map<String, dynamic>> _artistFollowStatus = {};
+
   @override
   void initState() {
     super.initState();
     _loadPopularArtists();
     _searchController.addListener(_onSearchChanged);
+
+    pb.authStore.onChange.listen((_) {
+      if (mounted) {
+        _checkFollowStatusForAllArtists();
+      }
+    });
   }
 
   @override
@@ -51,21 +54,18 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
       _isLoading = true;
     });
     try {
-      // Ambil artis dari koleksi 'artist'
-      // Urutkan berdasarkan monthlyListeners (popularitas) secara default
       final artists = await pb.collection('artist').getFullList(
-            sort:
-                '-monthlyListeners', // Urutkan dari yang paling banyak pendengar bulanan
+            sort: '-monthlyListeners',
           );
 
       if (mounted) {
         setState(() {
           _popularArtists = artists;
-          _filteredArtists =
-              List.from(_popularArtists); // Inisialisasi daftar yang difilter
+          _filteredArtists = List.from(_popularArtists);
           _isLoading = false;
-          _sortArtists(); // Terapkan pengurutan awal
+          _sortArtists();
         });
+        _checkFollowStatusForAllArtists();
       }
     } on ClientException catch (e) {
       print('PocketBase Client Error fetching popular artists: ${e.response}');
@@ -92,6 +92,71 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
     }
   }
 
+  Future<void> _checkFollowStatusForAllArtists() async {
+    if (!pb.authStore.isValid || _popularArtists.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _artistFollowStatus.clear();
+          for (var artist in _popularArtists) {
+            _artistFollowStatus[artist.id] = {
+              'isFollowing': false,
+              'followRecordId': null
+            };
+          }
+        });
+      }
+      return;
+    }
+
+    final String currentUserId = pb.authStore.model!.id;
+    for (var artist in _popularArtists) {
+      try {
+        final followRecord = await pb.collection('following').getFirstListItem(
+              'users = "$currentUserId" && artist = "${artist.id}"',
+            );
+        if (mounted) {
+          setState(() {
+            _artistFollowStatus[artist.id] = {
+              'isFollowing': true,
+              'followRecordId': followRecord.id
+            };
+          });
+        }
+      } on ClientException catch (e) {
+        if (e.statusCode == 404) {
+          if (mounted) {
+            setState(() {
+              _artistFollowStatus[artist.id] = {
+                'isFollowing': false,
+                'followRecordId': null
+              };
+            });
+          }
+        } else {
+          print('Error checking follow status for ${artist.id}: ${e.response}');
+          if (mounted) {
+            setState(() {
+              _artistFollowStatus[artist.id] = {
+                'isFollowing': false,
+                'followRecordId': null
+              };
+            });
+          }
+        }
+      } catch (e) {
+        print('Unexpected error checking follow status for ${artist.id}: $e');
+        if (mounted) {
+          setState(() {
+            _artistFollowStatus[artist.id] = {
+              'isFollowing': false,
+              'followRecordId': null
+            };
+          });
+        }
+      }
+    }
+  }
+
   void _onSearchChanged() {
     final query = _searchController.text.toLowerCase();
     setState(() {
@@ -99,13 +164,11 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
         _filteredArtists = List.from(_popularArtists);
       } else {
         _filteredArtists = _popularArtists
-            .where((artist) => artist
-                .getStringValue('name')
-                .toLowerCase()
-                .contains(query)) // Akses nama artis dari RecordModel
+            .where((artist) =>
+                artist.getStringValue('name').toLowerCase().contains(query))
             .toList();
       }
-      _sortArtists(); // Pastikan urutan tetap setelah pencarian
+      _sortArtists();
     });
   }
 
@@ -115,7 +178,7 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
       if (!_isSearching) {
         _searchController.clear();
         _filteredArtists = List.from(_popularArtists);
-        _sortArtists(); // Pastikan urutan tetap setelah pencarian
+        _sortArtists();
       }
     });
   }
@@ -143,9 +206,8 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                   ),
                 ),
               ),
-              const Divider(),
+              const Divider(color: Colors.white24),
               ConstrainedBox(
-                // Tambahkan ConstrainedBox agar bottom sheet tidak terlalu tinggi
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.4,
                 ),
@@ -155,7 +217,8 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                   itemBuilder: (context, index) {
                     final option = _sortOptions[index];
                     return ListTile(
-                      title: Text(option),
+                      title: Text(option,
+                          style: const TextStyle(color: Colors.white)),
                       trailing: _currentSortOption == option
                           ? const Icon(Icons.check,
                               color: AppTheme.primaryColor)
@@ -206,6 +269,100 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
     });
   }
 
+  void _toggleFollowStatus(RecordModel artistRecord) async {
+    if (!pb.authStore.isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login untuk mengikuti artis!')),
+      );
+      return;
+    }
+
+    final String artistId = artistRecord.id;
+    bool isCurrentlyFollowing =
+        _artistFollowStatus[artistId]?['isFollowing'] ?? false;
+    String? followRecordId = _artistFollowStatus[artistId]?['followRecordId'];
+    int currentFollowers = artistRecord.getIntValue('followers');
+    String artistName = artistRecord.getStringValue('name');
+
+    setState(() {
+      _artistFollowStatus[artistId] = {
+        'isFollowing': !isCurrentlyFollowing,
+        'followRecordId': followRecordId
+      };
+      if (!isCurrentlyFollowing) {
+        artistRecord.data['followers'] = currentFollowers + 1;
+      } else {
+        artistRecord.data['followers'] = currentFollowers - 1;
+      }
+    });
+
+    try {
+      if (!isCurrentlyFollowing) {
+        final newFollowRecord = await pb.collection('following').create(body: {
+          'users': pb.authStore.model!.id,
+          'artist': artistId,
+        });
+        if (mounted) {
+          setState(() {
+            _artistFollowStatus[artistId]!['followRecordId'] =
+                newFollowRecord.id;
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Mengikuti $artistName')),
+        );
+      } else {
+        if (followRecordId != null) {
+          await pb.collection('following').delete(followRecordId);
+          if (mounted) {
+            setState(() {
+              _artistFollowStatus[artistId]!['followRecordId'] = null;
+            });
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Berhenti mengikuti $artistName')),
+          );
+        }
+      }
+
+      await pb.collection('artist').update(artistId, body: {
+        'followers': artistRecord.getIntValue('followers'),
+      });
+    } on ClientException catch (e) {
+      print('Error toggling follow status for $artistName: ${e.response}');
+
+      if (mounted) {
+        setState(() {
+          _artistFollowStatus[artistId] = {
+            'isFollowing': isCurrentlyFollowing,
+            'followRecordId': followRecordId
+          };
+          artistRecord.data['followers'] = currentFollowers;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'Gagal mengubah status follow: ${e.response['message'] ?? 'Unknown error'}')),
+        );
+      }
+    } catch (e) {
+      print('Unexpected error toggling follow status for $artistName: $e');
+
+      if (mounted) {
+        setState(() {
+          _artistFollowStatus[artistId] = {
+            'isFollowing': isCurrentlyFollowing,
+            'followRecordId': followRecordId
+          };
+          artistRecord.data['followers'] = currentFollowers;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Terjadi kesalahan tak terduga: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -221,14 +378,16 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                 style: const TextStyle(color: Colors.white),
                 autofocus: true,
               )
-            : const Text('Popular Artists'),
+            : const Text('Popular Artists',
+                style: TextStyle(color: Colors.white)),
         actions: [
           IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            icon: Icon(_isSearching ? Icons.close : Icons.search,
+                color: Colors.white),
             onPressed: _toggleSearch,
           ),
           IconButton(
-            icon: const Icon(Icons.sort),
+            icon: const Icon(Icons.sort, color: Colors.white),
             onPressed: _showSortOptions,
           ),
         ],
@@ -251,24 +410,30 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                   ),
                   itemCount: _filteredArtists.length,
                   itemBuilder: (context, index) {
-                    final artistRecord =
-                        _filteredArtists[index]; // Ambil RecordModel
-                    return _buildArtistItem(
-                        artistRecord, index); // Teruskan RecordModel
+                    final artistRecord = _filteredArtists[index];
+                    return _buildArtistItem(artistRecord, index);
                   },
                 ),
     );
   }
 
   Widget _buildArtistItem(RecordModel artistRecord, int index) {
-    // Terima RecordModel
     final String name = artistRecord.getStringValue('name');
     final String imageUrl = artistRecord.getStringValue('imageUrl').isNotEmpty
         ? pb
             .getFileUrl(artistRecord, artistRecord.getStringValue('imageUrl'))
             .toString()
         : '';
-    final int monthlyListeners = artistRecord.getIntValue('monthlyListeners');
+
+    final int followers = artistRecord.getIntValue('followers');
+
+    final bool isFollowing =
+        _artistFollowStatus[artistRecord.id]?['isFollowing'] ?? false;
+
+    final ImageProvider<Object> avatarImageProvider = imageUrl.isNotEmpty
+        ? NetworkImage(imageUrl)
+        : const AssetImage('assets/images/default_avatar.png')
+            as ImageProvider<Object>;
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -280,8 +445,8 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => ArtistDetailScreen(
-                  artistRecord: artistRecord), // Teruskan RecordModel
+              builder: (context) =>
+                  ArtistDetailScreen(artistRecord: artistRecord),
             ),
           );
         },
@@ -296,20 +461,12 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                 children: [
                   CircleAvatar(
                     radius: 38,
-                    backgroundImage:
-                        imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                    backgroundImage: avatarImageProvider,
                     onBackgroundImageError: (exception, stackTrace) {
                       print('Error loading artist image: $exception');
                     },
-                    child: imageUrl.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            size: 38, // Ukuran ikon sesuai radius
-                            color: Colors.white54,
-                          )
-                        : null,
                   ),
-                  if (index < 3) // Tampilkan badge untuk 3 teratas
+                  if (index < 3)
                     Positioned(
                       top: 0,
                       right: 0,
@@ -347,15 +504,15 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                       Text(
                         name,
                         style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.white),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                       ),
                       Text(
-                        '${(monthlyListeners / 1000000).toStringAsFixed(1)}M pendengar', // Menggunakan monthlyListeners
+                        '${followers} pengikut',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 9,
@@ -377,9 +534,11 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                       size: 20,
                     ),
                     onPressed: () {
-                      // Implementasi untuk memutar musik artis (misal, lagu top pertama)
-                      // Anda perlu membuat sebuah service pemutar lagu yang bisa diakses global
-                      // dan meneruskan lagu RecordModel ke sana.
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content:
+                                Text('Play artist music not implemented yet.')),
+                      );
                     },
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
@@ -389,20 +548,15 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: const Icon(
-                      Icons.person_add_outlined,
+                    icon: Icon(
+                      isFollowing
+                          ? Icons.person_remove_outlined
+                          : Icons.person_add_outlined,
                       size: 16,
+                      color:
+                          isFollowing ? AppTheme.primaryColor : Colors.white70,
                     ),
-                    onPressed: () {
-                      // Implementasi untuk mengikuti artis ke PocketBase
-                      // Ini akan memerlukan fungsi untuk menambah/menghapus record di koleksi 'followed_artists'
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Anda sekarang mengikuti ${name}'),
-                          backgroundColor: AppTheme.primaryColor,
-                        ),
-                      );
-                    },
+                    onPressed: () => _toggleFollowStatus(artistRecord),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                       minWidth: 30,
@@ -444,9 +598,9 @@ class _PopularArtistsScreenState extends State<PopularArtistsScreen> {
             ElevatedButton.icon(
               onPressed: () {
                 setState(() {
-                  _isLoading = true; // Set loading true sebelum memuat ulang
+                  _isLoading = true;
                 });
-                _loadPopularArtists(); // Muat ulang data dari PocketBase
+                _loadPopularArtists();
               },
               icon: const Icon(Icons.refresh),
               label: const Text('Muat Ulang'),

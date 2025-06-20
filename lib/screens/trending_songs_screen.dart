@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
 import 'package:lyrix/screens/song_detail_screen.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // Import PocketBase instance
-import 'package:pocketbase/pocketbase.dart'; // Import RecordModel
-
-// Hapus imports:
-// import 'package:lyrix/models/song.dart';
-// import 'package:lyrix/data/mock_data.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:pocketbase/pocketbase.dart';
 
 class TrendingSongsScreen extends StatefulWidget {
   const TrendingSongsScreen({super.key});
@@ -17,12 +13,11 @@ class TrendingSongsScreen extends StatefulWidget {
 
 class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
   bool _isLoading = true;
-  List<RecordModel> _trendingSongs = []; // Ubah menjadi RecordModel
+  List<RecordModel> _trendingSongs = [];
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  List<RecordModel> _filteredSongs = []; // Ubah menjadi RecordModel
+  List<RecordModel> _filteredSongs = [];
 
-  // Opsi pengurutan
   String _currentSortOption = 'Popularitas';
   final List<String> _sortOptions = [
     'Popularitas',
@@ -52,20 +47,16 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
       _isLoading = true;
     });
     try {
-      // Ambil lagu dari koleksi 'songs'
-      // Urutkan berdasarkan 'plays' untuk menentukan trending
       final songs = await pb.collection('songs').getFullList(
-            sort:
-                '-plays', // Urutkan dari yang paling banyak diputar (trending)
+            sort: '-plays',
           );
 
       if (mounted) {
         setState(() {
           _trendingSongs = songs;
-          _filteredSongs =
-              List.from(_trendingSongs); // Inisialisasi daftar yang difilter
+          _filteredSongs = List.from(_trendingSongs);
           _isLoading = false;
-          _sortSongs(); // Terapkan pengurutan awal
+          _sortSongs();
         });
       }
     } on ClientException catch (e) {
@@ -106,7 +97,7 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                 song.getStringValue('album').toLowerCase().contains(query))
             .toList();
       }
-      _sortSongs(); // Pastikan urutan tetap setelah pencarian
+      _sortSongs();
     });
   }
 
@@ -116,7 +107,7 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
       if (!_isSearching) {
         _searchController.clear();
         _filteredSongs = List.from(_trendingSongs);
-        _sortSongs(); // Pastikan urutan tetap setelah pencarian
+        _sortSongs();
       }
     });
   }
@@ -146,7 +137,6 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
               ),
               const Divider(),
               ConstrainedBox(
-                // Tambahkan ConstrainedBox agar bottom sheet tidak terlalu tinggi
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.4,
                 ),
@@ -250,17 +240,14 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: _filteredSongs.length,
                   itemBuilder: (context, index) {
-                    final songRecord =
-                        _filteredSongs[index]; // Ambil RecordModel
-                    return _buildSongItem(
-                        songRecord, index); // Teruskan RecordModel
+                    final songRecord = _filteredSongs[index];
+                    return _buildSongItem(songRecord, index);
                   },
                 ),
     );
   }
 
   Widget _buildSongItem(RecordModel songRecord, int index) {
-    // Terima RecordModel
     final String title = songRecord.getStringValue('title');
     final String artist = songRecord.getStringValue('artist');
     final String imageUrl = songRecord.getStringValue('image').isNotEmpty
@@ -282,8 +269,7 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => SongDetailScreen(
-                  songRecord: songRecord), // Teruskan RecordModel
+              builder: (context) => SongDetailScreen(songRecord: songRecord),
             ),
           );
         },
@@ -292,7 +278,6 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
           padding: const EdgeInsets.all(12.0),
           child: Row(
             children: [
-              // Ranking
               Container(
                 width: 30,
                 alignment: Alignment.center,
@@ -306,7 +291,6 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              // Cover image
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: imageUrl.isNotEmpty
@@ -334,7 +318,6 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                       ),
               ),
               const SizedBox(width: 16),
-              // Song info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,7 +351,7 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '${(plays / 1000000).toStringAsFixed(1)}M', // Menggunakan plays
+                          '${(plays / 1000000).toStringAsFixed(1)}M',
                           style: TextStyle(
                             color: Colors.white54,
                             fontSize: 12,
@@ -382,7 +365,7 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '${(likes / 1000).toStringAsFixed(0)}K', // Menggunakan likes
+                          '${(likes / 1000).toStringAsFixed(0)}K',
                           style: TextStyle(
                             color: Colors.white54,
                             fontSize: 12,
@@ -393,18 +376,13 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
                   ],
                 ),
               ),
-              // Play button
               IconButton(
                 icon: const Icon(
                   Icons.play_circle_filled,
                   color: AppTheme.primaryColor,
                   size: 36,
                 ),
-                onPressed: () {
-                  // Implementasi untuk memutar lagu
-                  // Ini akan memerlukan AudioPlayer, mungkin seperti yang di SongDetailScreen
-                  // Jika Anda punya player global/service, Anda bisa memanggilnya di sini.
-                },
+                onPressed: () {},
               ),
             ],
           ),
@@ -439,9 +417,9 @@ class _TrendingSongsScreenState extends State<TrendingSongsScreen> {
             ElevatedButton.icon(
               onPressed: () {
                 setState(() {
-                  _isLoading = true; // Set loading true sebelum memuat ulang
+                  _isLoading = true;
                 });
-                _loadTrendingSongs(); // Muat ulang data dari PocketBase
+                _loadTrendingSongs();
               },
               icon: const Icon(Icons.refresh),
               label: const Text('Muat Ulang'),

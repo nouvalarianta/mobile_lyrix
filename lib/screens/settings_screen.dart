@@ -9,7 +9,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // State untuk pengaturan
   bool _offlineMode = false;
   bool _dataSaver = false;
   bool _autoPlay = true;
@@ -19,7 +18,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _equalizerEnabled = false;
   bool _normalizationEnabled = true;
 
-  // Opsi untuk kualitas audio
   final List<String> _audioQualityOptions = [
     'Low',
     'Medium',
@@ -27,7 +25,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'Very High'
   ];
 
-  // Opsi untuk bahasa
   final List<Map<String, String>> _languageOptions = [
     {'code': 'id', 'name': 'Bahasa Indonesia'},
     {'code': 'en', 'name': 'English'},
@@ -48,12 +45,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          // Bagian Tampilan
           _buildSectionHeader('Tampilan'),
           _buildLanguageSelector(),
           const Divider(),
-
-          // Bagian Pemutaran
           _buildSectionHeader('Pemutaran'),
           SwitchListTile(
             title: const Text('Putar Otomatis'),
@@ -110,8 +104,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             activeColor: AppTheme.primaryColor,
           ),
           const Divider(),
-
-          // Bagian Data
           _buildSectionHeader('Data'),
           SwitchListTile(
             title: const Text('Mode Offline'),
@@ -131,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) {
               setState(() {
                 _dataSaver = value;
-                // Jika penghemat data diaktifkan, turunkan kualitas audio
+
                 if (value && _audioQuality == 'High') {
                   _audioQuality = 'Medium';
                 }
@@ -148,8 +140,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           const Divider(),
-
-          // Bagian Notifikasi
           _buildSectionHeader('Notifikasi'),
           SwitchListTile(
             title: const Text('Notifikasi'),
@@ -174,28 +164,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : null,
           ),
           const Divider(),
-
-          // Bagian Akun
           _buildSectionHeader('Akun'),
           ListTile(
             title: const Text('Kelola Langganan'),
             subtitle: const Text('Lihat dan ubah paket langganan Anda'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Navigasi ke halaman langganan
-            },
+            onTap: () {},
           ),
           ListTile(
             title: const Text('Privasi'),
             subtitle: const Text('Kelola pengaturan privasi dan data Anda'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Navigasi ke halaman privasi
-            },
+            onTap: () {},
           ),
           const Divider(),
-
-          // Bagian Tentang
           _buildSectionHeader('Tentang'),
           ListTile(
             title: const Text('Versi Aplikasi'),
@@ -204,23 +186,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             title: const Text('Syarat dan Ketentuan'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Buka halaman syarat dan ketentuan
-            },
+            onTap: () {},
           ),
           ListTile(
             title: const Text('Kebijakan Privasi'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Buka halaman kebijakan privasi
-            },
+            onTap: () {},
           ),
           ListTile(
             title: const Text('Bantuan'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Buka halaman bantuan
-            },
+            onTap: () {},
           ),
           const SizedBox(height: 24),
           Padding(
@@ -329,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {
                     if (isStreaming) {
                       _audioQuality = value!;
-                      // Jika penghemat data aktif, batasi kualitas maksimal
+
                       if (_dataSaver && _audioQuality == 'High') {
                         _showDataSaverWarning();
                       }
@@ -400,7 +376,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showEqualizerDialog() {
-    // Simulasi equalizer dengan slider
     final List<double> bands = [3.0, 5.0, 7.0, 4.0, 2.0, 6.0, 8.0, 5.0];
     final List<String> frequencies = [
       '60Hz',
@@ -469,7 +444,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  // Reset equalizer
                   setState(() {
                     for (int i = 0; i < bands.length; i++) {
                       bands[i] = 5.0;
@@ -484,7 +458,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  // Simpan pengaturan equalizer
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -521,7 +494,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Simulasi penghapusan cache
+
               _showClearingCacheDialog();
             },
             style: ElevatedButton.styleFrom(
@@ -551,7 +524,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
 
-    // Simulasi proses penghapusan cache
     Future.delayed(const Duration(seconds: 2), () {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -564,7 +536,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showNotificationTypesDialog() {
-    // Simulasi jenis notifikasi
     final Map<String, bool> notificationTypes = {
       'Pembaruan Artis': true,
       'Rilis Baru': true,
@@ -642,14 +613,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Implementasi logout
+
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Anda telah keluar dari akun'),
                   backgroundColor: AppTheme.surfaceColor,
                 ),
               );
-              // Kembali ke halaman login
+
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(

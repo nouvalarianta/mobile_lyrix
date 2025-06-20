@@ -10,11 +10,16 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  pocketbase: ^0.22.0
+  pocketbase: ^0.23.0 # Tetap ini
   firebase_auth: ^5.5.4
   local_auth: ^2.3.0
-  image_picker: ^1.1.0
+  image_picker: ^1.1.0 # Atau ^0.8.9 jika Anda sudah mengubahnya
   just_audio: ^0.9.36
+  provider: ^6.0.5
+  audio_video_progress_bar: ^2.0.2
+  rxdart: ^0.27.7
+  http: ^1.2.0 # <--- UBAH KE VERSI INI!
+  http_parser: ^4.0.2 # Ini kemungkinan tidak perlu diubah, tapi biarkan dulu
 
 dev_dependencies:
   flutter_test:
@@ -24,4 +29,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/images/default_avatar.png
+    - assets/images/default_playlist.png

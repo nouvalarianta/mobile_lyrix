@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
-import 'package:lyrix/widgets/animated_play_button.dart';
 import 'package:lyrix/services/pocketbase_service.dart';
 import 'package:pocketbase/pocketbase.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:lyrix/screens/now_playing_screen.dart';
+import 'package:lyrix/services/audio_player_service.dart';
+import 'package:provider/provider.dart';
+import 'package:lyrix/widgets/add_to_playlist_bottom_sheet.dart'
+    as playlist_sheet;
 
 class SongDetailScreen extends StatefulWidget {
   final RecordModel songRecord;
@@ -15,9 +18,7 @@ class SongDetailScreen extends StatefulWidget {
 }
 
 class _SongDetailScreenState extends State<SongDetailScreen> {
-  late AudioPlayer _audioPlayer;
-  bool _isPlaying = false;
-  bool _isLiked = false; // State untuk status disukai/tidak disukai
+  bool _isLiked = false;
 
   String _title = '';
   String _artist = '';
@@ -33,26 +34,15 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   List<RecordModel> _similarSongs = [];
 
+  String? _likedRecordId;
+
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
+
     _loadSongData();
-    _checkLikeStatus(); // Periksa status like saat init
+    _checkLikeStatus();
     _loadSimilarSongs();
-    _audioPlayer.playerStateStream.listen((playerState) {
-      final isPlaying = playerState.playing;
-      final processingState = playerState.processingState;
-      if (mounted) {
-        setState(() {
-          _isPlaying = isPlaying;
-          if (processingState == ProcessingState.completed) {
-            _isPlaying = false;
-            _audioPlayer.seek(Duration.zero);
-          }
-        });
-      }
-    });
   }
 
   void _loadSongData() {
@@ -83,35 +73,30 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       }
 
       if (song.getStringValue('audioUrl').isNotEmpty) {
-        try {
-          _audioUrl =
-              pb.getFileUrl(song, song.getStringValue('audioUrl')).toString();
-          _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(_audioUrl)));
-        } catch (e) {
-          print('Error setting audio source: $e');
-          _audioUrl = '';
-        }
+        _audioUrl =
+            pb.getFileUrl(song, song.getStringValue('audioUrl')).toString();
       } else {
         _audioUrl = '';
       }
     });
   }
 
-  // Fungsi untuk memeriksa apakah lagu ini sudah disukai oleh pengguna yang login
   void _checkLikeStatus() async {
     if (!pb.authStore.isValid) {
       setState(() {
         _isLiked = false;
+        _likedRecordId = null;
       });
       return;
     }
     try {
-      await pb.collection('liked_songs').getFirstListItem(
-        'user = "${pb.authStore.model?.id}" && song_item = "${widget.songRecord.id}"', // Perbaikan: Gunakan song_item
-      );
+      final likedRecord = await pb.collection('liked_songs').getFirstListItem(
+            'user = "${pb.authStore.model?.id}" && song = "${widget.songRecord.id}"',
+          );
       if (mounted) {
         setState(() {
-          _isLiked = true; // Jika record ditemukan, berarti lagu disukai
+          _isLiked = true;
+          _likedRecordId = likedRecord.id;
         });
       }
     } on ClientException catch (e) {
@@ -119,6 +104,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         if (mounted) {
           setState(() {
             _isLiked = false;
+            _likedRecordId = null;
           });
         }
       } else {
@@ -126,6 +112,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         if (mounted) {
           setState(() {
             _isLiked = false;
+            _likedRecordId = null;
           });
         }
       }
@@ -134,12 +121,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       if (mounted) {
         setState(() {
           _isLiked = false;
+          _likedRecordId = null;
         });
       }
     }
   }
 
-  // Fungsi untuk menambah/menghapus lagu dari daftar yang disukai
   void _toggleLikeStatus() async {
     if (!pb.authStore.isValid) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,37 +135,43 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       return;
     }
 
+    bool previousLikedStatus = _isLiked;
     setState(() {
-      _isLiked = !_isLiked; // Langsung update UI optimistik
+      _isLiked = !_isLiked;
     });
 
     try {
       if (_isLiked) {
-        // Jika status baru adalah liked, buat record baru di 'liked_songs'
-        await pb.collection('liked_songs').create(body: {
+        final newLikedRecord = await pb.collection('liked_songs').create(body: {
           'user': pb.authStore.model?.id,
-          'song_item': widget.songRecord.id, // Perbaikan: Gunakan song_item
+          'song': widget.songRecord.id,
         });
+        if (mounted) {
+          setState(() {
+            _likedRecordId = newLikedRecord.id;
+          });
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Menyukai ${_title}')),
         );
       } else {
-        // Jika status baru adalah unliked, cari record yang sesuai dan hapus
-        final likedRecordToDelete = await pb
-            .collection('liked_songs')
-            .getFirstListItem(
-                'user = "${pb.authStore.model?.id}" && song_item = "${widget.songRecord.id}"'); // Perbaikan: Gunakan song_item
-        await pb.collection('liked_songs').delete(likedRecordToDelete.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Berhenti menyukai ${_title}')),
-        );
+        if (_likedRecordId != null) {
+          await pb.collection('liked_songs').delete(_likedRecordId!);
+          if (mounted) {
+            setState(() {
+              _likedRecordId = null;
+            });
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Berhenti menyukai ${_title}')),
+          );
+        }
       }
     } on ClientException catch (e) {
       print('Error toggling like status: ${e.response}');
       if (mounted) {
-        // Rollback UI jika ada error
         setState(() {
-          _isLiked = !_isLiked;
+          _isLiked = previousLikedStatus;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -190,63 +183,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       print('Unexpected error toggling like status: $e');
       if (mounted) {
         setState(() {
-          _isLiked = !_isLiked;
+          _isLiked = previousLikedStatus;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Terjadi kesalahan tak terduga: $e')),
         );
       }
-    }
-  }
-
-  // Fungsi baru untuk mencatat riwayat pemutaran
-  void _recordPlayedHistory(RecordModel songRecord) async {
-    if (!pb.authStore.isValid) return; // Hanya catat jika user login
-
-    try {
-      // Periksa apakah ada record history yang sama untuk lagu ini oleh user yang sama
-      // dalam durasi singkat (misal, 1 menit terakhir) untuk menghindari duplikasi berlebihan.
-      // Jika Anda hanya ingin update timestamp dari record terakhir, logic akan lebih kompleks.
-      // Untuk kesederhanaan, kita akan selalu membuat record baru untuk setiap play,
-      // atau memperbarui timestamp record yang sudah ada jika ditemukan dalam rentang waktu tertentu.
-
-      // Coba cari record terakhir untuk lagu ini oleh user ini.
-      // Jika ditemukan, update timestamp-nya. Jika tidak, buat baru.
-      RecordModel? existingPlayedRecord;
-      try {
-        existingPlayedRecord =
-            await pb.collection('played_history').getFirstListItem(
-                  'user = "${pb.authStore.model?.id}" && song_item = "${songRecord.id}"',
-                );
-      } on ClientException catch (e) {
-        if (e.statusCode != 404) {
-          // Abaikan 404, itu normal jika tidak ada history
-          print('Error checking existing played history: ${e.response}');
-        }
-      }
-
-      if (existingPlayedRecord != null) {
-        // Jika ada record lama, update timestamp-nya
-        await pb
-            .collection('played_history')
-            .update(existingPlayedRecord.id, body: {
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        print('Updated play history for ${songRecord.getStringValue('title')}');
-      } else {
-        // Jika tidak ada record lama, buat yang baru
-        await pb.collection('played_history').create(body: {
-          'user': pb.authStore.model?.id,
-          'song_item': songRecord.id,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        print(
-            'Created new play history record for ${songRecord.getStringValue('title')}');
-      }
-    } on ClientException catch (e) {
-      print('PocketBase Client Error recording play history: ${e.response}');
-    } catch (e) {
-      print('Unexpected error recording play history: $e');
     }
   }
 
@@ -267,30 +209,41 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
-  void _togglePlayPause() {
-    if (_audioUrl.isNotEmpty) {
-      if (_isPlaying) {
-        _audioPlayer.pause();
-      } else {
-        _audioPlayer.play();
-        _recordPlayedHistory(
-            widget.songRecord); // Panggil fungsi pencatat riwayat
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Audio not available for this song.')),
-      );
+  void _playThisSongAndRecordHistory() {
+    final audioPlayerService =
+        Provider.of<AudioPlayerService>(context, listen: false);
+    audioPlayerService.playSong(widget.songRecord);
+
+    if (mounted) {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (context) => const NowPlayingScreen()));
     }
+  }
+
+  void _showAddToPlaylistDialog(BuildContext context, RecordModel songToAdd) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return playlist_sheet.AddToPlaylistBottomSheet(songToAdd: songToAdd);
+      },
+    );
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final audioPlayerService = Provider.of<AudioPlayerService>(context);
+    final isPlayingGlobal = audioPlayerService.isPlaying &&
+        audioPlayerService.currentSong?.id == widget.songRecord.id;
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -313,7 +266,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               IconButton(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onPressed: () {
-                  // Aksi untuk lebih banyak opsi
+                  _showAddToPlaylistDialog(context, widget.songRecord);
                 },
               ),
             ],
@@ -399,10 +352,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      AnimatedPlayButton(
-                        size: 64,
-                        isPlaying: _isPlaying,
-                        onPressed: _togglePlayPause,
+                      GestureDetector(
+                        onTap: _playThisSongAndRecordHistory,
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.primaryColor.withOpacity(0.3),
+                                blurRadius: 10,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isPlayingGlobal ? Icons.pause : Icons.play_arrow,
+                            size: 32,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -476,9 +447,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ),
                     trailing:
                         const Icon(Icons.chevron_right, color: Colors.white54),
-                    onTap: () {
-                      // Navigate to album details
-                    },
+                    onTap: () {},
                   ),
                   const SizedBox(height: 24),
                   Text(
@@ -589,92 +558,113 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: Container(
-        height: 80,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceColor,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _imageUrl.isNotEmpty
-                  ? Image.network(
-                      _imageUrl,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          width: 56,
-                          height: 56,
-                          color: Colors.grey[800],
-                          child:
-                              const Icon(Icons.music_note, color: Colors.white),
-                        );
-                      },
-                    )
-                  : Container(
-                      width: 56,
-                      height: 56,
-                      color: Colors.grey[800],
-                      child: const Icon(Icons.music_note, color: Colors.white),
-                    ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Now Playing',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white54,
-                        ),
+      bottomNavigationBar: Consumer<AudioPlayerService>(
+        builder: (context, audioPlayerService, child) {
+          final currentSong = audioPlayerService.currentSong;
+          if (currentSong == null) {
+            return const SizedBox.shrink();
+          }
+
+          final imageUrl = currentSong.getStringValue('image').isNotEmpty
+              ? pb
+                  .getFileUrl(currentSong, currentSong.getStringValue('image'))
+                  .toString()
+              : '';
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const NowPlayingScreen()));
+            },
+            child: Container(
+              height: 80,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _title,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                ],
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: imageUrl.isNotEmpty
+                        ? Image.network(
+                            imageUrl,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 56,
+                                height: 56,
+                                color: Colors.grey[800],
+                                child: const Icon(Icons.music_note,
+                                    color: Colors.white),
+                              );
+                            },
+                          )
+                        : Container(
+                            width: 56,
+                            height: 56,
+                            color: Colors.grey[800],
+                            child: const Icon(Icons.music_note,
+                                color: Colors.white),
+                          ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Now Playing',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.white54,
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          currentSong.getStringValue('title'),
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous),
+                    onPressed: audioPlayerService.seekToPrevious,
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      audioPlayerService.isPlaying
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_filled,
+                      size: 42,
+                      color: AppTheme.primaryColor,
+                    ),
+                    onPressed: audioPlayerService.togglePlayPause,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next),
+                    onPressed: audioPlayerService.seekToNext,
                   ),
                 ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.skip_previous),
-              onPressed: () {
-                _audioPlayer.seekToPrevious();
-              },
-            ),
-            IconButton(
-              icon: Icon(
-                _isPlaying
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_filled,
-                size: 42,
-                color: AppTheme.primaryColor,
-              ),
-              onPressed: _togglePlayPause,
-            ),
-            IconButton(
-              icon: const Icon(Icons.skip_next),
-              onPressed: () {
-                _audioPlayer.seekToNext();
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

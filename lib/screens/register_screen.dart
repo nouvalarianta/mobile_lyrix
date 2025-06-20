@@ -22,7 +22,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _agreeToTerms = false;
 
-  // Initialize PocketBase
   final pb = PocketBase('http://127.0.0.1:8090');
 
   @override
@@ -41,7 +40,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
 
       try {
-        // Create new user in PocketBase
         final userData = {
           'email': _emailController.text,
           'password': _passwordController.text,
@@ -49,14 +47,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'name': _nameController.text,
         };
 
-        // Create user in PocketBase users collection
         await pb.collection('users').create(body: userData);
 
         setState(() {
           _isLoading = false;
         });
 
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Registration successful! Please log in.'),
@@ -64,7 +60,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         );
 
-        // Navigate to login page
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -76,7 +71,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _isLoading = false;
         });
 
-        // Handle different types of errors
         String errorMessage = 'Registration failed. Please try again.';
 
         if (e.response['data'] != null) {
@@ -136,7 +130,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Title
                   const Center(
                     child: Column(
                       children: [
@@ -165,10 +158,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 40),
-
-                  // Name Field
                   CustomTextField(
                     controller: _nameController,
                     label: 'Full Name',
@@ -183,10 +173,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       return null;
                     },
                   ),
-
                   const SizedBox(height: 20),
-
-                  // Email Field
                   CustomTextField(
                     controller: _emailController,
                     label: 'Email',
@@ -203,10 +190,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       return null;
                     },
                   ),
-
                   const SizedBox(height: 20),
-
-                  // Password Field
                   CustomTextField(
                     controller: _passwordController,
                     label: 'Password',
@@ -235,10 +219,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       return null;
                     },
                   ),
-
                   const SizedBox(height: 20),
-
-                  // Confirm Password Field
                   CustomTextField(
                     controller: _confirmPasswordController,
                     label: 'Confirm Password',
@@ -268,10 +249,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       return null;
                     },
                   ),
-
                   const SizedBox(height: 20),
-
-                  // Terms and Conditions
                   Row(
                     children: [
                       Checkbox(
@@ -304,10 +282,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 32),
-
-                  // Register Button
                   SizedBox(
                     height: 56,
                     child: ElevatedButton(
@@ -323,10 +298,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Divider
                   const Row(
                     children: [
                       Expanded(child: Divider(color: Colors.grey)),
@@ -337,21 +309,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       Expanded(child: Divider(color: Colors.grey)),
                     ],
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Social Register Button
                   SocialButton(
                     text: 'Continue with Google',
                     icon: Icons.g_mobiledata,
-                    onPressed: () {
-                      // Handle Google registration
-                    },
+                    onPressed: () {},
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Login Link
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

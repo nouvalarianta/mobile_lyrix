@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:lyrix/screens/song_detail_screen.dart';
 import 'package:lyrix/theme/app_theme.dart';
-import 'package:lyrix/services/pocketbase_service.dart'; // Import PocketBase instance
-import 'package:pocketbase/pocketbase.dart'; // Import RecordModel
-
-// Hapus imports:
-// import 'package:lyrix/models/artist.dart';
-// import 'package:lyrix/models/song.dart';
-// import 'package:lyrix/data/mock_data.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:pocketbase/pocketbase.dart';
+import 'package:lyrix/services/audio_player_service.dart';
+import 'package:provider/provider.dart';
+import 'package:lyrix/screens/now_playing_screen.dart';
+import 'package:lyrix/widgets/add_to_playlist_bottom_sheet.dart';
 
 class ArtistDetailScreen extends StatefulWidget {
-  final RecordModel artistRecord; // Menerima RecordModel langsung
+  final RecordModel artistRecord;
 
   const ArtistDetailScreen({super.key, required this.artistRecord});
 
@@ -20,10 +18,9 @@ class ArtistDetailScreen extends StatefulWidget {
 
 class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   bool _isFollowing = false;
-  bool _isLoading = true; // Loading state untuk data artis dan lagu-lagu
+  bool _isLoading = true;
   List<RecordModel> _artistSongs = [];
 
-  // Data artis yang akan ditampilkan di UI
   String _artistName = '';
   String _artistImageUrl = '';
   int _followers = 0;
@@ -31,11 +28,29 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   int _topTracksCount = 0;
   String _bio = 'No biography available.';
 
+  String? _followingRecordId;
+
   @override
   void initState() {
     super.initState();
-    _loadArtistData(); // Muat data detail artis
-    _loadArtistSongs(); // Muat lagu-lagu artis
+    _loadArtistData();
+    _checkAndLoadData();
+    pb.authStore.onChange.listen((_) {
+      if (mounted) {
+        _checkFollowStatus();
+      }
+    });
+  }
+
+  void _checkAndLoadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    _checkFollowStatus();
+    await _loadArtistSongs();
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   void _loadArtistData() {
@@ -44,17 +59,11 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
       _artistName = artist.getStringValue('name');
       _followers = artist.getIntValue('followers');
       _monthlyListeners = artist.getIntValue('monthlyListeners');
-      // Perbaikan di sini: Pastikan nama field 'topTracks' di PocketBase sama persis
-      // Jika di screenshot Anda '#topTracks', maka gunakan getIntValue('#topTracks')
-      // Namun, nama field PocketBase standar biasanya tanpa '#'.
-      _topTracksCount =
-          artist.getIntValue('topTracks'); // Asumsi field 'topTracks'
-      _bio =
-          artist.getStringValue('bio').isNotEmpty == true
-              ? artist.getStringValue('bio')
-              : 'No biography available.';
+      _topTracksCount = artist.getIntValue('topTracks');
+      _bio = artist.getStringValue('bio').isNotEmpty
+          ? artist.getStringValue('bio')
+          : 'No biography available.';
 
-      // Get image URL dari field 'imageUrl'
       if (artist.getStringValue('imageUrl').isNotEmpty) {
         try {
           _artistImageUrl = pb
@@ -62,29 +71,145 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               .toString();
         } catch (e) {
           print('Error getting artist image URL: $e');
-          _artistImageUrl = ''; // Fallback
+          _artistImageUrl = '';
         }
       } else {
-        _artistImageUrl = ''; // Pastikan string kosong jika tidak ada
+        _artistImageUrl = '';
       }
-      _isLoading = false; // Set loading false setelah data artis dimuat
     });
+  }
+
+  void _checkFollowStatus() async {
+    if (!pb.authStore.isValid) {
+      if (mounted) {
+        setState(() {
+          _isFollowing = false;
+          _followingRecordId = null;
+        });
+      }
+      return;
+    }
+    try {
+      final followRecord = await pb.collection('following').getFirstListItem(
+            'users = "${pb.authStore.model?.id}" && artist = "${widget.artistRecord.id}"',
+          );
+      if (mounted) {
+        setState(() {
+          _isFollowing = true;
+          _followingRecordId = followRecord.id;
+        });
+      }
+    } on ClientException catch (e) {
+      if (e.statusCode == 404) {
+        if (mounted) {
+          setState(() {
+            _isFollowing = false;
+            _followingRecordId = null;
+          });
+        }
+      } else {
+        print('Error checking follow status: ${e.response}');
+        if (mounted) {
+          setState(() {
+            _isFollowing = false;
+            _followingRecordId = null;
+          });
+        }
+      }
+    } catch (e) {
+      print('Unexpected error checking follow status: $e');
+      if (mounted) {
+        setState(() {
+          _isFollowing = false;
+        });
+      }
+    }
+  }
+
+  void _toggleFollowStatus() async {
+    if (!pb.authStore.isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login untuk mengikuti artis!')),
+      );
+      return;
+    }
+
+    bool previousFollowingStatus = _isFollowing;
+    int previousFollowers = _followers;
+
+    setState(() {
+      _isFollowing = !_isFollowing;
+      if (_isFollowing) {
+        _followers++;
+      } else {
+        _followers--;
+      }
+    });
+
+    try {
+      if (_isFollowing) {
+        final newFollowRecord = await pb.collection('following').create(body: {
+          'users': pb.authStore.model?.id,
+          'artist': widget.artistRecord.id,
+        });
+        if (mounted) {
+          setState(() {
+            _followingRecordId = newFollowRecord.id;
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Mengikuti ${_artistName}')),
+        );
+      } else {
+        if (_followingRecordId != null) {
+          await pb.collection('following').delete(_followingRecordId!);
+          if (mounted) {
+            setState(() {
+              _followingRecordId = null;
+            });
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Berhenti mengikuti ${_artistName}')),
+          );
+        }
+      }
+
+      await pb.collection('artist').update(widget.artistRecord.id, body: {
+        'followers': _followers,
+      });
+    } on ClientException catch (e) {
+      print('Error toggling follow status: ${e.response}');
+      if (mounted) {
+        setState(() {
+          _isFollowing = previousFollowingStatus;
+          _followers = previousFollowers;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'Gagal mengubah status follow: ${e.response['message'] ?? 'Unknown error'}')),
+        );
+      }
+    } catch (e) {
+      print('Unexpected error toggling follow status: $e');
+      if (mounted) {
+        setState(() {
+          _isFollowing = previousFollowingStatus;
+          _followers = previousFollowers;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Terjadi kesalahan tak terduga: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _loadArtistSongs() async {
     try {
-      // Ambil lagu-lagu dari artis ini
-      // PENTING: Asumsi ada field 'artist' di koleksi 'songs' yang nilainya adalah NAMA ARTIS.
-      // Filter yang Anda gunakan: 'artist = "${widget.artistRecord.getStringValue('name')}"'
-      // Ini akan mencari lagu di mana field 'artist' di koleksi 'songs'
-      // cocok dengan nama artis (misal, "Dua Lipa").
-      // Pastikan field 'artist' di koleksi 'songs' Anda adalah 'text' dan berisi nama artis,
-      // BUKAN relasi ke koleksi 'artist' atau ID.
-      // Jika itu relasi, filternya akan berbeda: 'artist.id = "${widget.artistRecord.id}"'
       final songs = await pb.collection('songs').getFullList(
             filter: 'artist = "${widget.artistRecord.getStringValue('name')}"',
-            sort: '-plays', // Urutkan lagu terpopuler dari artis ini
-            batch: 10, // Ambil beberapa lagu saja untuk demo
+            sort: '-plays',
+            batch: 10,
           );
 
       if (mounted) {
@@ -111,13 +236,26 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     }
   }
 
+  void _showAddToPlaylistDialog(BuildContext context, RecordModel songToAdd) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return AddToPlaylistBottomSheet(songToAdd: songToAdd);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            backgroundColor: AppTheme.surfaceColor, // Warna AppBar
+            backgroundColor: AppTheme.surfaceColor,
             expandedHeight: 280,
             pinned: true,
             leading: IconButton(
@@ -127,9 +265,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
-                onPressed: () {
-                  // Aksi untuk lebih banyak opsi
-                },
+                onPressed: () {},
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
@@ -145,7 +281,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Gambar latar belakang
                   _artistImageUrl.isNotEmpty
                       ? Image.network(
                           _artistImageUrl,
@@ -169,7 +304,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                             color: Colors.white24,
                           ),
                         ),
-                  // Overlay gradient
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -208,6 +342,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                                   .headlineSmall
                                   ?.copyWith(
                                     fontWeight: FontWeight.bold,
+                                    color: Colors.white,
                                   ),
                             ),
                             const SizedBox(height: 2),
@@ -224,12 +359,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                         ),
                       ),
                       ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            _isFollowing = !_isFollowing;
-                          });
-                          // TODO: Implement follow/unfollow logic to PocketBase
-                        },
+                        onPressed: _toggleFollowStatus,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _isFollowing
                               ? Colors.white24
@@ -237,6 +367,9 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(30),
+                            side: _isFollowing
+                                ? const BorderSide(color: Colors.white70)
+                                : BorderSide.none,
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 20,
@@ -260,7 +393,9 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'Biography',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                        ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -275,126 +410,145 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     children: [
                       Text(
                         'Popular Songs',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
                       ),
                       TextButton(
                         onPressed: () {
-                          // TODO: Navigate to all songs by this artist
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    'See All Songs feature not implemented yet.')),
+                          );
                         },
-                        child: const Text('See All'),
+                        child: const Text('See All',
+                            style: TextStyle(color: AppTheme.primaryColor)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  if (_isLoading &&
-                      _artistSongs.isEmpty) // Perbaiki loading indicator
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
-                  else if (_artistSongs.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Text(
-                          'No popular songs available for this artist.',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white54,
-                                  ),
-                        ),
-                      ),
-                    )
-                  else
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: EdgeInsets.zero,
-                      itemCount: _artistSongs.length > 5
-                          ? 5
-                          : _artistSongs.length, // Batasi 5 lagu teratas
-                      itemBuilder: (context, index) {
-                        final songRecord = _artistSongs[index];
-                        final songImageUrl =
-                            songRecord.getStringValue('image').isNotEmpty
-                                ? pb
-                                    .getFileUrl(songRecord,
-                                        songRecord.getStringValue('image'))
-                                    .toString()
-                                : '';
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: songImageUrl.isNotEmpty
-                                ? Image.network(
-                                    songImageUrl,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: 50,
-                                        height: 50,
-                                        color: Colors.grey[800],
-                                        child: const Icon(Icons.music_note,
-                                            color: Colors.white, size: 20),
-                                      );
-                                    },
-                                  )
-                                : Container(
-                                    width: 50,
-                                    height: 50,
-                                    color: Colors.grey[800],
-                                    child: const Icon(Icons.music_note,
-                                        color: Colors.white, size: 20),
-                                  ),
+                  _isLoading && _artistSongs.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24.0),
+                            child: CircularProgressIndicator(
+                                color: AppTheme.primaryColor),
                           ),
-                          title: Text(
-                            songRecord.getStringValue('title'),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          subtitle: Text(
-                            // Perbaikan: Akses 'artist' dari RecordModel dan 'plays' juga dari RecordModel
-                            '${songRecord.getStringValue('artist')} • ${songRecord.getIntValue('plays')} plays',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.more_vert, size: 20),
-                            onPressed: () {
-                              // Aksi untuk opsi lagu
-                            },
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    SongDetailScreen(songRecord: songRecord),
+                        )
+                      : _artistSongs.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: Text(
+                                  'No popular songs available for this artist.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: Colors.white54,
+                                      ),
+                                ),
                               ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: EdgeInsets.zero,
+                              itemCount: _artistSongs.length > 5
+                                  ? 5
+                                  : _artistSongs.length,
+                              itemBuilder: (context, index) {
+                                final songRecord = _artistSongs[index];
+                                final songImageUrl = songRecord
+                                        .getStringValue('image')
+                                        .isNotEmpty
+                                    ? pb
+                                        .getFileUrl(songRecord,
+                                            songRecord.getStringValue('image'))
+                                        .toString()
+                                    : '';
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: songImageUrl.isNotEmpty
+                                        ? Image.network(
+                                            songImageUrl,
+                                            width: 50,
+                                            height: 50,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                              return Container(
+                                                width: 50,
+                                                height: 50,
+                                                color: Colors.grey[800],
+                                                child: const Icon(
+                                                    Icons.music_note,
+                                                    color: Colors.white,
+                                                    size: 20),
+                                              );
+                                            },
+                                          )
+                                        : Container(
+                                            width: 50,
+                                            height: 50,
+                                            color: Colors.grey[800],
+                                            child: const Icon(Icons.music_note,
+                                                color: Colors.white, size: 20),
+                                          ),
+                                  ),
+                                  title: Text(
+                                    songRecord.getStringValue('title'),
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Colors.white),
+                                  ),
+                                  subtitle: Text(
+                                    '${songRecord.getStringValue('artist')} • ${songRecord.getIntValue('plays')} plays',
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.white70),
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.more_vert,
+                                        size: 20, color: Colors.white70),
+                                    onPressed: () {
+                                      _showSongOptionsMenu(context, songRecord);
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  onTap: () {
+                                    Provider.of<AudioPlayerService>(context,
+                                            listen: false)
+                                        .playSong(songRecord);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const NowPlayingScreen(),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                   const SizedBox(height: 16),
                   Text(
                     'Albums',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                        ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
                     height: 160,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: 5, // Ini masih placeholder
+                      itemCount: 5,
                       itemBuilder: (context, index) {
-                        // Ini masih hardcoded/placeholder, perlu integrasi dengan koleksi 'albums' jika ada
                         return Container(
                           width: 120,
                           margin: const EdgeInsets.only(right: 12),
@@ -407,33 +561,32 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                                   height: 120,
                                   color: Colors.grey[800],
                                   child: const Center(
-                                    child: Icon(
-                                      Icons.album,
-                                      size: 36,
-                                      color: Colors.white54,
-                                    ),
+                                    child: Icon(Icons.album,
+                                        size: 36, color: Colors.white54),
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Album ${index + 1}', // Placeholder
+                                'Album ${index + 1}',
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodyMedium
                                     ?.copyWith(
                                       fontSize: 12,
+                                      color: Colors.white,
                                     ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                '2023', // Placeholder
+                                '2023',
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
                                     ?.copyWith(
                                       fontSize: 10,
+                                      color: Colors.white70,
                                     ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -468,9 +621,66 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         const SizedBox(height: 2),
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.white70,
+              ),
         ),
       ],
+    );
+  }
+
+  void _showSongOptionsMenu(BuildContext context, RecordModel songRecord) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.queue_music, color: Colors.white),
+                title: const Text('Add to Queue',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            '${songRecord.getStringValue('title')} added to queue')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_add, color: Colors.white),
+                title: const Text('Add to Playlist',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAddToPlaylistDialog(context, songRecord);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share, color: Colors.white),
+                title: const Text('Share Song',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content:
+                            Text('Share functionality not implemented yet.')),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
 import 'package:lyrix/screens/song_detail_screen.dart';
 import 'package:lyrix/screens/artist_detail_screen.dart';
-// Tambahkan import untuk AlbumDetailScreen dan PlaylistDetailScreen jika sudah ada
-// import 'package:lyrix/screens/album_detail_screen.dart';
-// import 'package:lyrix/screens/playlist_detail_screen.dart';
 import 'package:lyrix/services/pocketbase_service.dart';
 import 'package:pocketbase/pocketbase.dart';
 
@@ -17,7 +14,7 @@ class RecentlyPlayedScreen extends StatefulWidget {
 
 class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   bool _isLoading = true;
-  List<RecordModel> _playedHistoryRecords = []; // Sekarang langsung dari koleksi 'played_history'
+  List<RecordModel> _playedHistoryRecords = [];
 
   String _currentFilter = 'Semua';
   final List<String> _filterOptions = [
@@ -32,7 +29,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   void initState() {
     super.initState();
     _loadRecentlyPlayed();
-    // Penting: listener untuk refresh jika user login/logout
+
     pb.authStore.onChange.listen((_) {
       if (mounted) {
         _loadRecentlyPlayed();
@@ -41,7 +38,6 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   }
 
   void _loadRecentlyPlayed() async {
-    // Jika tidak login, tidak ada riwayat pemutaran
     if (!pb.authStore.isValid) {
       setState(() {
         _playedHistoryRecords = [];
@@ -56,10 +52,19 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
 
     try {
       final records = await pb.collection('played_history').getFullList(
-            filter: 'user = "${pb.authStore.model?.id}"', // Filter hanya riwayat user ini
-            expand: 'song_item,album_item,playlist_item,artist_item', // Expand semua relasi opsional
-            sort: '-timestamp', // Urutkan berdasarkan timestamp terbaru
+            filter: 'user = "${pb.authStore.model?.id}"',
+            expand: 'song_item,album_item,playlist_item,artist_item',
+            sort: '-timestamp',
           );
+
+      print(
+          'Fetched Played History Records: ${records.map((r) => r.toJson()).toList()}');
+      for (var record in records) {
+        if (record.expand['song_item']?.isNotEmpty == true) {
+          print(
+              'Expanded Song Item: ${record.expand['song_item']!.first.toJson()}');
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -71,7 +76,9 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
       print('PocketBase Client Error fetching played history: ${e.response}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load history: ${e.response['message'] ?? 'Unknown error'}')),
+          SnackBar(
+              content: Text(
+                  'Failed to load history: ${e.response['message'] ?? e.toString()}')),
         );
         setState(() {
           _isLoading = false;
@@ -94,7 +101,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
     if (_currentFilter == 'Semua') {
       return _playedHistoryRecords;
     } else {
-      final filterTypeMap = { // Mapping filter option ke nama field relasi
+      final filterTypeMap = {
         'lagu': 'song_item',
         'album': 'album_item',
         'playlist': 'playlist_item',
@@ -102,9 +109,8 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
       };
       final fieldName = filterTypeMap[_currentFilter.toLowerCase()];
 
-      if (fieldName == null) return []; // Fallback jika filter tidak valid
+      if (fieldName == null) return [];
 
-      // Filter berdasarkan apakah field relasi yang sesuai tidak null
       return _playedHistoryRecords.where((item) {
         return item.expand[fieldName]?.isNotEmpty == true;
       }).toList();
@@ -184,7 +190,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Baru Diputar'),
+        title: const Text('Recently Played'),
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list),
@@ -204,7 +210,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: filteredItems.length,
                   itemBuilder: (context, index) {
-                    final itemRecord = filteredItems[index]; // Ini adalah record dari 'played_history'
+                    final itemRecord = filteredItems[index];
                     return _buildRecentItem(itemRecord);
                   },
                 ),
@@ -212,12 +218,11 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   }
 
   Widget _buildRecentItem(RecordModel playedHistoryRecord) {
-    // Ambil timestamp dari record played_history
-    final DateTime timestamp = DateTime.parse(playedHistoryRecord.get('timestamp'));
+    final DateTime timestamp =
+        DateTime.parse(playedHistoryRecord.data['timestamp']);
 
-    // Identifikasi tipe item dan ambil RecordModel yang diexpand
     RecordModel? itemData;
-    String type = 'unknown'; // Default type
+    String type = 'unknown';
 
     if (playedHistoryRecord.expand['song_item']?.isNotEmpty == true) {
       itemData = playedHistoryRecord.expand['song_item']!.first;
@@ -225,7 +230,8 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
     } else if (playedHistoryRecord.expand['album_item']?.isNotEmpty == true) {
       itemData = playedHistoryRecord.expand['album_item']!.first;
       type = 'album';
-    } else if (playedHistoryRecord.expand['playlist_item']?.isNotEmpty == true) {
+    } else if (playedHistoryRecord.expand['playlist_item']?.isNotEmpty ==
+        true) {
       itemData = playedHistoryRecord.expand['playlist_item']!.first;
       type = 'playlist';
     } else if (playedHistoryRecord.expand['artist_item']?.isNotEmpty == true) {
@@ -234,45 +240,58 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
     }
 
     if (itemData == null) {
-      return const SizedBox.shrink(); // Jangan tampilkan jika data item tidak ada
+      print(
+          'Error: itemData is null for playedHistoryRecord ID: ${playedHistoryRecord.id}. Type: $type');
+      return const SizedBox.shrink();
     }
 
-    // Ambil data untuk UI dari itemData (RecordModel yang diexpand)
     String title = '';
     String subtitle = '';
     String imageUrl = '';
-    IconData typeIcon = Icons.help_outline; // Default jika tidak dikenal
+    IconData typeIcon = Icons.help_outline;
 
     switch (type) {
       case 'song':
         title = itemData.getStringValue('title');
-        subtitle = '${itemData.getStringValue('artist')} • ${itemData.getStringValue('album')}';
+        subtitle =
+            '${itemData.getStringValue('artist')} • ${itemData.getStringValue('album')}';
         imageUrl = itemData.getStringValue('image').isNotEmpty
-            ? pb.getFileUrl(itemData, itemData.getStringValue('image')).toString()
+            ? pb
+                .getFileUrl(itemData, itemData.getStringValue('image'))
+                .toString()
             : '';
         typeIcon = Icons.music_note;
         break;
       case 'album':
         title = itemData.getStringValue('name');
-        subtitle = '${itemData.getStringValue('artist')} • ${itemData.getIntValue('releaseYear')}';
+        subtitle =
+            '${itemData.getStringValue('artist')} • ${itemData.getIntValue('releaseYear')}';
         imageUrl = itemData.getStringValue('imageUrl').isNotEmpty
-            ? pb.getFileUrl(itemData, itemData.getStringValue('imageUrl')).toString()
+            ? pb
+                .getFileUrl(itemData, itemData.getStringValue('imageUrl'))
+                .toString()
             : '';
         typeIcon = Icons.album;
         break;
       case 'playlist':
         title = itemData.getStringValue('name');
-        subtitle = '${itemData.getIntValue('songCount')} lagu • ${itemData.getStringValue('createdBy')}';
+        subtitle =
+            '${itemData.getIntValue('songCount')} lagu • ${itemData.getStringValue('createdBy')}';
         imageUrl = itemData.getStringValue('imageUrl').isNotEmpty
-            ? pb.getFileUrl(itemData, itemData.getStringValue('imageUrl')).toString()
+            ? pb
+                .getFileUrl(itemData, itemData.getStringValue('imageUrl'))
+                .toString()
             : '';
         typeIcon = Icons.playlist_play;
         break;
       case 'artist':
         title = itemData.getStringValue('name');
-        subtitle = '${itemData.getIntValue('monthlyListeners')} pendengar bulanan';
+        subtitle =
+            '${itemData.getIntValue('monthlyListeners')} pendengar bulanan';
         imageUrl = itemData.getStringValue('imageUrl').isNotEmpty
-            ? pb.getFileUrl(itemData, itemData.getStringValue('imageUrl')).toString()
+            ? pb
+                .getFileUrl(itemData, itemData.getStringValue('imageUrl'))
+                .toString()
             : '';
         typeIcon = Icons.person;
         break;
@@ -286,7 +305,6 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
       ),
       child: InkWell(
         onTap: () {
-          // Navigasi berdasarkan tipe ke detail screen yang sesuai
           if (type == 'song') {
             Navigator.push(
               context,
@@ -298,16 +316,11 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => ArtistDetailScreen(artistRecord: itemData!),
+                builder: (context) =>
+                    ArtistDetailScreen(artistRecord: itemData!),
               ),
             );
           }
-          // TODO: Tambahkan navigasi untuk tipe album dan playlist
-          // else if (type == 'album') {
-          //   Navigator.push(context, MaterialPageRoute(builder: (context) => AlbumDetailScreen(albumRecord: itemData!)));
-          // } else if (type == 'playlist') {
-          //   Navigator.push(context, MaterialPageRoute(builder: (context) => PlaylistDetailScreen(playlistRecord: itemData!)));
-          // }
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
@@ -379,11 +392,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                   color: AppTheme.primaryColor,
                   size: 36,
                 ),
-                onPressed: () {
-                  // TODO: Implementasi pemutaran item
-                  // Ini akan memerlukan audio service yang mampu memutar item berdasarkan tipe
-                  // Misalnya, jika type == 'song', putar lagunya. Jika 'album', putar lagu pertama albumnya.
-                },
+                onPressed: () {},
               ),
             ],
           ),
@@ -393,7 +402,6 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   }
 
   Widget _buildEmptyState() {
-    // ... (kode yang sama seperti sebelumnya)
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -422,11 +430,9 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          if (!pb.authStore.isValid) // Tampilkan jika tidak login
+          if (!pb.authStore.isValid)
             ElevatedButton.icon(
-              onPressed: () {
-                // Mungkin navigasi ke LoginScreen
-              },
+              onPressed: () {},
               icon: const Icon(Icons.login),
               label: const Text('Login'),
               style: ElevatedButton.styleFrom(
@@ -441,10 +447,10 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                 ),
               ),
             )
-          else // Jika login, arahkan ke Jelajahi Musik
+          else
             ElevatedButton.icon(
               onPressed: () {
-                Navigator.pop(context); // Kembali ke Home/Search Screen
+                Navigator.pop(context);
               },
               icon: const Icon(Icons.explore),
               label: const Text('Jelajahi Musik'),
