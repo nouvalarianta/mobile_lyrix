@@ -189,7 +189,6 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
         'name': newPlaylistName,
         'createdBy': pb.authStore.model!.id,
         'songCount': 1, // Langsung set 1 karena lagu pertama ditambahkan
-        'imageUrl': '',
       });
 
       // Tambahkan lagu ke playlist yang baru dibuat

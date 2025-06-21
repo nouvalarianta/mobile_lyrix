@@ -185,6 +185,7 @@ class HomeContent extends StatefulWidget {
 class _HomeContentState extends State<HomeContent> {
   List<RecordModel> _trendingSongs = [];
   List<RecordModel> _popularArtists = [];
+  List<RecordModel> _recentlyPlayed = [];
   bool _isLoading = true;
 
   @override
@@ -194,6 +195,10 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   Future<void> _fetchHomeData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       final songs = await pb.collection('songs').getFullList(
             sort: '-plays',
@@ -205,10 +210,28 @@ class _HomeContentState extends State<HomeContent> {
             batch: 10,
           );
 
+      List<RecordModel> recentSongs = [];
+      if (pb.authStore.isValid) {
+        final history = await pb.collection('played_history').getFullList(
+              filter: 'user = "${pb.authStore.model?.id}"',
+              expand: 'song_item',
+              sort: '-timestamp',
+              batch: 10,
+            );
+
+        final uniqueSongIds = <String>{};
+        recentSongs = history
+            .where((h) => h.expand['song_item']?.isNotEmpty == true)
+            .map((h) => h.expand['song_item']!.first)
+            .where((song) => uniqueSongIds.add(song.id))
+            .toList();
+      }
+
       if (mounted) {
         setState(() {
           _trendingSongs = songs;
           _popularArtists = artists;
+          _recentlyPlayed = recentSongs;
           _isLoading = false;
         });
       }
@@ -400,21 +423,22 @@ class _HomeContentState extends State<HomeContent> {
             child: SizedBox(
               height: 80,
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _trendingSongs.isEmpty
+                  ? const Center(child: Text('')) // Hide indicator here
+                  : _recentlyPlayed.isEmpty
                       ? const Center(child: Text('No recently played songs.'))
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           scrollDirection: Axis.horizontal,
-                          itemCount: _trendingSongs.length,
+                          itemCount: _recentlyPlayed.length,
                           itemBuilder: (context, index) {
-                            final songRecord =
-                                _trendingSongs[index % _trendingSongs.length];
+                            final songRecord = _recentlyPlayed[index];
                             final imageUrl =
                                 songRecord.getStringValue('image').isNotEmpty
                                     ? pb
-                                        .getFileUrl(songRecord,
-                                            songRecord.getStringValue('image'))
+                                        .getFileUrl(
+                                          songRecord,
+                                          songRecord.getStringValue('image'),
+                                        )
                                         .toString()
                                     : '';
                             return Container(
