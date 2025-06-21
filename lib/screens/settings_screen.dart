@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/theme/app_theme.dart';
+import 'package:lyrix/services/pocketbase_service.dart';
+import 'package:lyrix/screens/login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -32,6 +34,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     {'code': 'ko', 'name': 'Korean'},
   ];
   String _selectedLanguage = 'id';
+
+  // -- TAMBAHAN --: Logika logout dari referensi kode
+  void _logout() async {
+    try {
+      pb.authStore.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Anda telah keluar dari akun'),
+          ),
+        );
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (Route<dynamic> route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal logout: $e'),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -611,17 +642,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Batal'),
           ),
           ElevatedButton(
+            // -- PERUBAHAN --: Memanggil fungsi _logout
             onPressed: () {
-              Navigator.pop(context);
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Anda telah keluar dari akun'),
-                  backgroundColor: AppTheme.surfaceColor,
-                ),
-              );
-
-              Navigator.pop(context);
+              Navigator.pop(context); // Tutup dialog dulu
+              _logout(); // Panggil fungsi logout
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,

@@ -274,18 +274,13 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                         ),
                         Column(
                           children: [
-                            Text('MEMUTAR DARI PENCARIAN',
+                            Text('MEMUTAR LAGU',
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
                                     ?.copyWith(
                                         color: Colors.white70,
                                         letterSpacing: 1)),
-                            Text('Pencarian Terakhir',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold)),
                           ],
                         ),
                         IconButton(

@@ -45,6 +45,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     _searchController.addListener(_onSearchChanged);
     pb.authStore.onChange.listen((_) {
       if (mounted) {
+        // Ketika status login berubah (login/logout), muat ulang playlist
         _loadPlaylists();
       }
     });
@@ -57,15 +58,34 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     super.dispose();
   }
 
+  // -- PERUBAHAN UTAMA ADA DI SINI --
   void _loadPlaylists() async {
     setState(() {
       _isLoading = true;
     });
 
+    // Langkah 1: Pastikan pengguna sudah login.
+    if (!pb.authStore.isValid) {
+      // Jika tidak login, kosongkan daftar dan hentikan loading.
+      if (mounted) {
+        setState(() {
+          _playlists = [];
+          _filteredPlaylists = [];
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
+      // Langkah 2: Dapatkan ID pengguna yang sedang login.
+      final userId = pb.authStore.model!.id;
+
+      // Langkah 3: Gunakan filter untuk mengambil playlist yang 'createdBy' nya adalah ID pengguna saat ini.
       final playlists = await pb.collection('playlists').getFullList(
             sort: '-created',
             expand: 'createdBy',
+            filter: 'createdBy = "$userId"', // Ini adalah filter kuncinya
           );
 
       if (mounted) {
@@ -114,6 +134,8 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       } else {
         _filteredPlaylists = _playlists.where((playlist) {
           final playlistName = playlist.getStringValue('name').toLowerCase();
+          // Pencarian berdasarkan createdBy tidak lagi relevan karena semua playlist milik user,
+          // tapi bisa dipertahankan jika field 'name' user juga ingin dicari.
           final createdByName = playlist.expand['createdBy']?.first
                   .getStringValue('name')
                   .toLowerCase() ??
@@ -847,21 +869,23 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Judul AppBar diubah agar lebih sesuai
+    final appBarTitle = pb.authStore.isValid ? 'Your Playlists' : 'Playlists';
+
     return Scaffold(
       appBar: AppBar(
         title: _isSearching
             ? TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Cari playlist...',
+                  hintText: 'Cari di playlist Anda...',
                   border: InputBorder.none,
                   hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
                 ),
                 style: const TextStyle(color: Colors.white),
                 autofocus: true,
               )
-            : const Text('Your Playlists',
-                style: TextStyle(color: Colors.white)),
+            : Text(appBarTitle, style: const TextStyle(color: Colors.white)),
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search,
@@ -896,12 +920,15 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                     return _buildPlaylistItem(playlistRecord);
                   },
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createNewPlaylist,
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
-      ),
+      // Tombol FAB hanya muncul jika pengguna sudah login
+      floatingActionButton: pb.authStore.isValid
+          ? FloatingActionButton(
+              onPressed: _createNewPlaylist,
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -914,9 +941,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
             .toString()
         : '';
     final int songCount = playlistRecord.getIntValue('songCount');
-    final String createdByName =
-        playlistRecord.expand['createdBy']?.first.getStringValue('name') ??
-            'Unknown User';
+    // Karena sudah difilter, 'createdBy' akan selalu user saat ini.
+    final String createdByName = 'Oleh Anda';
+
+    // Mendapatkan ID user saat ini untuk mengecek kepemilikan
+    final currentUserId = pb.authStore.isValid ? pb.authStore.model!.id : null;
+    final isOwner =
+        playlistRecord.expand['createdBy']?.first.id == currentUserId;
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -998,7 +1029,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Oleh $createdByName',
+                      createdByName, // Teks diubah menjadi 'Oleh Anda'
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 12,
@@ -1031,45 +1062,47 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                     ),
                   ),
                   const Spacer(),
-                  PopupMenuButton<String>(
-                    icon: const Icon(
-                      Icons.more_vert,
-                      size: 18,
-                      color: Colors.white70,
+                  // Tombol 'more' hanya tampil jika user adalah pemilik playlist
+                  if (isOwner)
+                    PopupMenuButton<String>(
+                      icon: const Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: const [
+                              Icon(Icons.edit, size: 20, color: Colors.white70),
+                              SizedBox(width: 8),
+                              Text('Edit Playlist',
+                                  style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: const [
+                              Icon(Icons.delete_forever,
+                                  size: 20, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('Hapus Playlist',
+                                  style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editPlaylist(playlistRecord);
+                        } else if (value == 'delete') {
+                          _deletePlaylist(playlistRecord);
+                        }
+                      },
                     ),
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: const [
-                            Icon(Icons.edit, size: 20, color: Colors.white70),
-                            SizedBox(width: 8),
-                            Text('Edit Playlist',
-                                style: TextStyle(color: Colors.white)),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: const [
-                            Icon(Icons.delete_forever,
-                                size: 20, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('Hapus Playlist',
-                                style: TextStyle(color: Colors.red)),
-                          ],
-                        ),
-                      ),
-                    ],
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _editPlaylist(playlistRecord);
-                      } else if (value == 'delete') {
-                        _deletePlaylist(playlistRecord);
-                      }
-                    },
-                  ),
                 ],
               ),
             ),
@@ -1080,6 +1113,17 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   }
 
   Widget _buildEmptyState() {
+    // Pesan disesuaikan berdasarkan status login
+    final bool isLoggedIn = pb.authStore.isValid;
+    final String title = isLoggedIn
+        ? (_isSearching
+            ? 'Tidak ada playlist yang cocok'
+            : 'Anda belum memiliki playlist')
+        : 'Silakan login untuk melihat playlist';
+    final String subtitle = isLoggedIn
+        ? 'Buat playlist untuk mengorganisir lagu favorit Anda'
+        : 'Playlist yang Anda buat akan muncul di sini.';
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1091,9 +1135,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            _isSearching
-                ? 'Tidak ada playlist yang cocok dengan pencarian Anda'
-                : 'Anda belum memiliki playlist',
+            title,
             style: TextStyle(
               fontSize: 16,
               color: Colors.white.withOpacity(0.7),
@@ -1102,7 +1144,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Buat playlist untuk mengorganisir lagu favorit Anda',
+            subtitle,
             style: TextStyle(
               fontSize: 14,
               color: Colors.white.withOpacity(0.5),
@@ -1110,22 +1152,24 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _createNewPlaylist,
-            icon: const Icon(Icons.add),
-            label: const Text('Buat Playlist Baru'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 12,
+          // Tombol 'Buat Playlist' hanya muncul jika sudah login
+          if (isLoggedIn)
+            ElevatedButton.icon(
+              onPressed: _createNewPlaylist,
+              icon: const Icon(Icons.add),
+              label: const Text('Buat Playlist Baru'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lyrix/services/pocketbase_service.dart';
 import 'package:pocketbase/pocketbase.dart';
+import 'package:lyrix/theme/app_theme.dart'; // Menambahkan import untuk AppTheme
 
 class AddToPlaylistBottomSheet extends StatefulWidget {
   final RecordModel songToAdd;
@@ -21,6 +22,12 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
   void initState() {
     super.initState();
     _loadUserPlaylists();
+  }
+
+  @override
+  void dispose() {
+    _newPlaylistController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserPlaylists() async {
@@ -72,68 +79,89 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
   }
 
   Future<void> _addSongToPlaylist(RecordModel playlist) async {
+    // Tampilkan loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.primaryColor),
+      ),
+    );
+
     try {
+      // Cek apakah lagu sudah ada
       await pb.collection('detail_playlist').getFirstListItem(
             'playlist_id = "${playlist.id}" && song_id = "${widget.songToAdd.id}"',
           );
+
       if (mounted) {
+        Navigator.pop(context); // Hapus loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Lagu sudah ada di playlist ini!')),
         );
         return;
       }
     } on ClientException catch (e) {
+      // Jika error bukan 404 (Not Found), berarti ada masalah lain.
       if (e.statusCode != 404) {
         print('Error checking existing song in playlist: ${e.response}');
+        if (mounted) Navigator.pop(context); // Hapus loading indicator
+        return;
       }
+      // Jika 404, berarti lagu belum ada. Lanjutkan proses penambahan.
     } catch (e) {
       print('Unexpected error checking existing song in playlist: $e');
+      if (mounted) Navigator.pop(context); // Hapus loading indicator
+      return;
     }
 
     try {
+      // Tambahkan lagu ke detail_playlist
       await pb.collection('detail_playlist').create(body: {
         'playlist_id': playlist.id,
         'song_id': widget.songToAdd.id,
         'timestamp': DateTime.now().toIso8601String(),
       });
 
-      final updatedPlaylistRecord =
-          await pb.collection('playlists').getOne(playlist.id);
-      final currentSongCount = updatedPlaylistRecord.getIntValue('songCount');
-
+      // Update jumlah lagu di collection playlists
+      final currentSongCount = playlist.getIntValue('songCount');
       await pb.collection('playlists').update(playlist.id, body: {
         'songCount': currentSongCount + 1,
       });
 
       if (mounted) {
+        Navigator.pop(context); // Hapus loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
                   'Lagu "${widget.songToAdd.getStringValue('title')}" ditambahkan ke playlist "${playlist.getStringValue('name')}"')),
         );
-        Navigator.pop(context);
+        Navigator.pop(context); // Tutup bottom sheet
       }
     } on ClientException catch (e) {
       print('PocketBase Client Error adding song to playlist: ${e.response}');
       if (mounted) {
+        Navigator.pop(context); // Hapus loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'Gagal menambahkan lagu ke playlist: ${e.response['message'] ?? e.toString()}')),
+                  'Gagal menambahkan lagu: ${e.response['message'] ?? e.toString()}')),
         );
       }
     } catch (e) {
       print('Unexpected error adding song to playlist: $e');
       if (mounted) {
+        Navigator.pop(context); // Hapus loading indicator
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menambahkan lagu ke playlist: $e')),
+          SnackBar(content: Text('Gagal menambahkan lagu: $e')),
         );
       }
     }
   }
 
   Future<void> _createNewPlaylistAndAddSong() async {
-    if (_newPlaylistController.text.trim().isEmpty) {
+    final newPlaylistName = _newPlaylistController.text.trim();
+    if (newPlaylistName.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Nama playlist tidak boleh kosong.')),
@@ -142,18 +170,29 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
       return;
     }
 
+    // Tampilkan loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.primaryColor),
+      ),
+    );
+
     try {
       if (!pb.authStore.isValid || pb.authStore.model == null) {
         throw Exception('User not logged in!');
       }
 
+      // Buat playlist baru
       final newPlaylistRecord = await pb.collection('playlists').create(body: {
-        'name': _newPlaylistController.text.trim(),
+        'name': newPlaylistName,
         'createdBy': pb.authStore.model!.id,
-        'songCount': 1,
+        'songCount': 1, // Langsung set 1 karena lagu pertama ditambahkan
         'imageUrl': '',
       });
 
+      // Tambahkan lagu ke playlist yang baru dibuat
       await pb.collection('detail_playlist').create(body: {
         'playlist_id': newPlaylistRecord.id,
         'song_id': widget.songToAdd.id,
@@ -161,16 +200,18 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
       });
 
       if (mounted) {
+        Navigator.pop(context); // Hapus loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'Playlist "${_newPlaylistController.text}" dibuat dan lagu ditambahkan.')),
+                  'Playlist "$newPlaylistName" dibuat dan lagu ditambahkan.')),
         );
-        Navigator.pop(context);
+        Navigator.pop(context); // Tutup bottom sheet
       }
     } on ClientException catch (e) {
       print('PocketBase Client Error creating new playlist: ${e.response}');
       if (mounted) {
+        Navigator.pop(context); // Hapus loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
@@ -180,6 +221,7 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
     } catch (e) {
       print('Error creating new playlist: $e');
       if (mounted) {
+        Navigator.pop(context); // Hapus loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Gagal membuat playlist: $e')),
         );
@@ -190,76 +232,96 @@ class _AddToPlaylistBottomSheetState extends State<AddToPlaylistBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
+      // Padding untuk keyboard
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16.0,
-        right: 16.0,
-        top: 16.0,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Tambahkan ke Playlist',
-                  style: Theme.of(context).textTheme.titleLarge),
-              IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context)),
-            ],
-          ),
-          SizedBox(height: 16),
-          TextField(
-            controller: _newPlaylistController,
-            decoration: InputDecoration(
-              hintText: 'Nama Playlist Baru',
-              suffixIcon: IconButton(
-                icon: Icon(Icons.add),
-                onPressed: _createNewPlaylistAndAddSong,
+      child: Container(
+        padding: const EdgeInsets.all(16.0),
+        // Memberi batasan tinggi maksimal untuk BottomSheet
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Tambahkan ke Playlist',
+                    style: Theme.of(context).textTheme.titleLarge),
+                IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _newPlaylistController,
+              decoration: InputDecoration(
+                hintText: 'Nama Playlist Baru',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.add_circle,
+                      color: AppTheme.primaryColor),
+                  onPressed: _createNewPlaylistAndAddSong,
+                ),
               ),
             ),
-          ),
-          SizedBox(height: 16),
-          Expanded(
-            child: _isLoadingPlaylists
-                ? Center(child: CircularProgressIndicator())
-                : _userPlaylists.isEmpty
-                    ? Center(child: Text('Tidak ada playlist. Buat yang baru!'))
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _userPlaylists.length,
-                        itemBuilder: (context, index) {
-                          final playlist = _userPlaylists[index];
-                          final playlistImageUrl =
-                              playlist.getStringValue('imageUrl').isNotEmpty
-                                  ? pb
-                                      .getFileUrl(playlist,
-                                          playlist.getStringValue('imageUrl'))
-                                      .toString()
-                                  : '';
-                          return ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: playlistImageUrl.isNotEmpty
-                                  ? Image.network(playlistImageUrl,
-                                      width: 50, height: 50, fit: BoxFit.cover)
-                                  : Container(
-                                      width: 50,
-                                      height: 50,
-                                      color: Colors.grey[800],
-                                      child: Icon(Icons.playlist_play,
-                                          color: Colors.white)),
-                            ),
-                            title: Text(playlist.getStringValue('name')),
-                            subtitle: Text(
-                                '${playlist.getIntValue('songCount')} lagu'),
-                            onTap: () => _addSongToPlaylist(playlist),
-                          );
-                        },
+            const Divider(height: 32),
+            // -- PERUBAHAN DI SINI --
+            // Widget Expanded dihapus
+            if (_isLoadingPlaylists)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_userPlaylists.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(
+                    child: Text('Tidak ada playlist. Buat yang baru di atas!')),
+              )
+            else
+              // ListView sekarang dibungkus Flexible agar bisa di-scroll di dalam Column
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true, // shrinkWrap tetap diperlukan
+                  itemCount: _userPlaylists.length,
+                  itemBuilder: (context, index) {
+                    final playlist = _userPlaylists[index];
+                    final playlistImageUrl = playlist
+                            .getStringValue('imageUrl')
+                            .isNotEmpty
+                        ? pb
+                            .getFileUrl(
+                                playlist, playlist.getStringValue('imageUrl'))
+                            .toString()
+                        : '';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: playlistImageUrl.isNotEmpty
+                            ? Image.network(playlistImageUrl,
+                                width: 50, height: 50, fit: BoxFit.cover)
+                            : Container(
+                                width: 50,
+                                height: 50,
+                                color: Colors.grey[800],
+                                child: const Icon(Icons.playlist_play,
+                                    color: Colors.white)),
                       ),
-          ),
-        ],
+                      title: Text(playlist.getStringValue('name')),
+                      subtitle:
+                          Text('${playlist.getIntValue('songCount')} lagu'),
+                      onTap: () => _addSongToPlaylist(playlist),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

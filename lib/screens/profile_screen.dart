@@ -133,13 +133,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ? NetworkImage(_imageUrl!)
                     : const AssetImage('assets/images/default_avatar.png')
                         as ImageProvider<Object>,
-                child: _imageUrl == null
-                    ? const Icon(
-                        Icons.person,
-                        size: 50,
-                        color: Colors.white,
-                      )
-                    : null,
               ),
               const SizedBox(height: 16),
               Text(
